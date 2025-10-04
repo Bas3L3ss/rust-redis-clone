@@ -64,8 +64,8 @@ impl RedisGlobal {
                     if let Some(host_port) = args.next() {
                         let mut parts = host_port.splitn(2, ' ');
                         if let (Some(host), Some(port_str)) = (parts.next(), parts.next()) {
-                            let s = Some(sync_with_master(host, port_str, &port, &dbfilename));
-                            master_stream = s;
+                            // let s = Some(sync_with_master(host, port_str, &port, &dbfilename));
+                            // master_stream = s;
                             master = Some((host.to_string(), port_str.to_string()));
                         }
                     }
