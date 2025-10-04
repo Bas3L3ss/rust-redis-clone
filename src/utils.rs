@@ -28,7 +28,8 @@ pub fn write_file(stream: &mut TcpStream, file_name: &str) {
     let mut file = match File::open(file_name) {
         Ok(f) => f,
         Err(_) => {
-            let _ = stream.write_all(b"-ERR could not open file\r\n");
+            let _ =
+                stream.write_all(format!("-ERR could not open file: {}\r\n", file_name).as_bytes());
             return;
         }
     };
