@@ -60,8 +60,22 @@ impl RedisGlobal {
                         port = val;
                     }
                 }
-                "--dir" => dir_path = args.next().unwrap().to_string(),
-                "--dbfilename" => dbfilename = args.next().unwrap().to_string(),
+                "--dir" => {
+                    if let Some(val) = args.next() {
+                        dir_path = val.to_string();
+                        println!("Set dir_path to: {}", dir_path);
+                    } else {
+                        eprintln!("Error: --dir requires a value");
+                    }
+                }
+                "--dbfilename" => {
+                    if let Some(val) = args.next() {
+                        dbfilename = val.to_string();
+                        println!("Set dbfilename to: {}", dbfilename);
+                    } else {
+                        eprintln!("Error: --dbfilename requires a value");
+                    }
+                }
 
                 "--replicaof" => {
                     if let Some(host_port) = args.next() {
