@@ -5,6 +5,7 @@ use crate::utils::{
     is_matched, write_array, write_bulk_string, write_error, write_integer, write_null_bulk_string,
     write_redis_file, write_simple_string,
 };
+use std::io::Write;
 use std::net::TcpStream;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -407,7 +408,6 @@ impl Runner {
             config_map.insert(key.clone(), config);
         }
 
-        println!("hi propogate");
         // Propagate to slaves, with correct SET form
         let propagation = if let Some(ex) = ex_arg {
             format!(
@@ -479,7 +479,9 @@ impl Runner {
         let mut global_guard = global_state.lock().unwrap();
         for stream_arc in global_guard.slave_streams.values_mut() {
             if let Ok(mut stream) = stream_arc.lock() {
-                write_simple_string(&mut *stream, message);
+                if let Err(e) = stream.write_all(message.as_bytes()) {
+                    eprintln!("Failed to propagate to slave: {:?}", e);
+                }
             }
         }
     }
