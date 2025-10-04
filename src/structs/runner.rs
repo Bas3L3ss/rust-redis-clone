@@ -473,8 +473,10 @@ impl Runner {
 
     fn propogate_slaves(&self, global_state: &RedisGlobalType, message: &str) {
         let mut global_guard = global_state.lock().unwrap();
-        for stream in global_guard.slave_streams.values_mut() {
-            write_simple_string(stream, message);
+        for stream_arc in global_guard.slave_streams.values_mut() {
+            if let Ok(mut stream) = stream_arc.lock() {
+                write_simple_string(&mut *stream, message);
+            }
         }
     }
 }

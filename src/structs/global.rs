@@ -1,14 +1,19 @@
-use std::{collections::HashMap, env::Args, net::TcpStream};
+use std::{
+    collections::HashMap,
+    env::Args,
+    net::TcpStream,
+    sync::{Arc, Mutex},
+};
 
 use crate::utils::sync_with_master;
 
 #[derive(Debug)]
 pub struct RedisGlobal {
     pub port: String,
-    pub master: Option<(String, String)>,
-    pub master_stream: Option<TcpStream>,
+    pub master_address: Option<(String, String)>,
+    pub master_stream: Option<Arc<Mutex<TcpStream>>>,
     pub slave_caps: HashMap<String, Vec<String>>,
-    pub slave_streams: HashMap<String, TcpStream>,
+    pub slave_streams: HashMap<String, Arc<Mutex<TcpStream>>>,
     pub master_replid: String,
     pub master_repl_offset: usize,
     pub dir_path: String,
@@ -24,24 +29,22 @@ impl RedisGlobal {
         self.slave_caps.insert(slave_port, caps);
     }
     pub fn set_slave_streams(&mut self, slave_port: String, stream: TcpStream) {
-        self.slave_streams.insert(slave_port, stream);
+        self.slave_streams
+            .insert(slave_port, Arc::new(Mutex::new(stream)));
     }
 
     pub fn set_master(&mut self, master: Option<(String, String)>) {
-        self.master = master;
+        self.master_address = master;
     }
 
     pub fn is_master(&self) -> bool {
-        if self.master.is_some() && self.master_stream.is_some() {
-            return false;
-        }
-
-        true
+        let is_master = !(self.master_address.is_some() && self.master_stream.is_some());
+        is_master
     }
 
     pub fn init(mut args: Args) -> Self {
         let mut port = "6379".to_string();
-        let mut master: Option<(String, String)> = None;
+        let mut master_address: Option<(String, String)> = None;
         let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
         let master_repl_offset = 0;
         let mut dir_path = String::from("/var/tmp/redis");
@@ -64,9 +67,14 @@ impl RedisGlobal {
                     if let Some(host_port) = args.next() {
                         let mut parts = host_port.splitn(2, ' ');
                         if let (Some(host), Some(port_str)) = (parts.next(), parts.next()) {
-                            let s = Some(sync_with_master(host, port_str, &port, &dbfilename));
-                            master_stream = s;
-                            master = Some((host.to_string(), port_str.to_string()));
+                            let stream = Some(Arc::new(Mutex::new(sync_with_master(
+                                host,
+                                port_str,
+                                &port,
+                                &dbfilename,
+                            ))));
+                            master_stream = stream;
+                            master_address = Some((host.to_string(), port_str.to_string()));
                         }
                     }
                 }
@@ -76,7 +84,7 @@ impl RedisGlobal {
 
         RedisGlobal {
             port,
-            master,
+            master_address,
             slave_caps: HashMap::new(),
             slave_streams: HashMap::new(),
             master_repl_offset,

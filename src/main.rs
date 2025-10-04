@@ -49,19 +49,57 @@ fn main() {
     listen_for_clients(listener, db, db_config, global_state);
 }
 
-fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: RedisGlobalType) {
+pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: RedisGlobalType) {
     thread::spawn(move || {
-        let mut global_guard = global_state.lock().unwrap();
-        if global_guard.is_master() {
-            return;
-        }
-        let master_stream = match global_guard.master_stream.take() {
-            Some(stream) => stream,
-            None => return,
-        };
-        drop(global_guard);
+        let master_stream_arc = {
+            let global_guard = global_state.lock().unwrap();
+            if global_guard.is_master() {
+                return;
+            }
 
-        handle_connection(master_stream, db, db_config, global_state);
+            match &global_guard.master_stream {
+                Some(stream_arc) => Arc::clone(stream_arc),
+                None => {
+                    eprintln!("No master stream found; aborting replication thread");
+                    return;
+                }
+            }
+        };
+
+        let mut connection_info = Connection::default();
+
+        loop {
+            let mut buffer = [0u8; 1024];
+
+            let mut stream_guard = master_stream_arc.lock().unwrap();
+            let bytes_read = {
+                match stream_guard.read(&mut buffer) {
+                    Ok(0) => {
+                        eprintln!("Master closed connection");
+                        break;
+                    }
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("Read error from master: {e}");
+                        break;
+                    }
+                }
+            };
+
+            let request = Request::new_from_buffer(&buffer[..bytes_read]);
+
+            let mut runner = Runner::new(request.args);
+
+            runner.run(
+                &mut stream_guard,
+                &db,
+                &db_config,
+                &global_state,
+                &mut connection_info,
+            );
+        }
+
+        eprintln!("Replication thread exiting; consider retrying sync with master");
     });
 }
 
