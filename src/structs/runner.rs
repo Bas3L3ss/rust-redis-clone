@@ -407,6 +407,7 @@ impl Runner {
             config_map.insert(key.clone(), config);
         }
 
+        println!("hi propogate");
         // Propagate to slaves, with correct SET form
         let propagation = if let Some(ex) = ex_arg {
             format!(
