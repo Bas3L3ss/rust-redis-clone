@@ -139,14 +139,16 @@ impl Runner {
                     let mut caps = Vec::new();
                     while idx < args.len() {
                         let cap = args[idx].to_ascii_lowercase();
-                        caps.push(cap.clone());
 
                         if cap != "psync2" {
                             break;
                         }
 
+                        caps.push(cap.clone());
+
                         idx += 1;
                     }
+                    println!("{caps:#?}");
 
                     if !caps.is_empty() {
                         write_simple_string(stream, "OK");
