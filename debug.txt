@@ -1,0 +1,4 @@
+cargo watch -x run
+cargo run -- --port 6380 --replicaof "localhost 6379"
+sudo service redis-server stop
+hexdump -C  dump.rdb
