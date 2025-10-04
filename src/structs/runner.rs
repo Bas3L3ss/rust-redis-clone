@@ -252,7 +252,7 @@ impl Runner {
             let mut consumed = 1;
             match args[1].to_ascii_lowercase().as_str() {
                 "dir" => {
-                    write_array(stream, &[Some("dir"), Some("/var/lib/redis")]);
+                    write_array(stream, &[Some("dir"), Some("/tmp/rdb-2261")]);
                     consumed += 1;
                 }
                 "dbfilename" => {
