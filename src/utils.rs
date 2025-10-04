@@ -212,8 +212,7 @@ pub fn sync_with_master(
 
     let psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
     if let Err(e) = stream.write_all(psync_cmd.as_bytes()) {
-        eprintln!("Failed to send PSYNC: {}", e);
-        return stream; // or handle gracefully
+        panic!("Failed to send PSYNC: {}", e);
     }
     stream.flush().unwrap();
 
