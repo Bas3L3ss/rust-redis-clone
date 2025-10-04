@@ -192,8 +192,6 @@ pub fn sync_with_master(
     let ping_cmd = b"*1\r\n$4\r\nPING\r\n";
     stream.write_all(ping_cmd).unwrap();
     stream.flush().unwrap();
-    let mut buf = [0u8; 4096];
-    let _ = stream.read(&mut buf).unwrap();
 
     let port_str = listening_port.to_string();
     let replconf_listen = format!(
@@ -203,12 +201,10 @@ pub fn sync_with_master(
     );
     stream.write_all(replconf_listen.as_bytes()).unwrap();
     stream.flush().unwrap();
-    let _ = stream.read(&mut buf).unwrap();
 
     let replconf_capa = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
     stream.write_all(replconf_capa.as_bytes()).unwrap();
     stream.flush().unwrap();
-    let _ = stream.read(&mut buf).unwrap();
 
     let psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
     stream.write_all(psync_cmd.as_bytes()).unwrap();
