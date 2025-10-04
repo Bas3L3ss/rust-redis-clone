@@ -105,7 +105,10 @@ impl Runner {
                 ),
             );
 
-            write_file(stream, &global.dbfilename);
+            write_file(
+                stream,
+                &format!("{}/{}", global.dir_path, global.dbfilename),
+            );
 
             let stream_clone = stream.try_clone().unwrap();
             if let Some(ref slave_port) = connection.slave_port {
