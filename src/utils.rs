@@ -213,7 +213,9 @@ pub fn sync_with_master(
         let mut header = Vec::new();
         while header.len() < 2 || !header.ends_with(b"\r\n") {
             let mut byte = [0u8; 1];
+            println!("hi err");
             let n = stream.read(&mut byte).unwrap();
+            println!("hi");
             if n == 0 {
                 break;
             }
