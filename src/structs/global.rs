@@ -63,7 +63,6 @@ impl RedisGlobal {
                 "--dir" => {
                     if let Some(val) = args.next() {
                         dir_path = val.to_string();
-                        println!("Set dir_path to: {}", dir_path);
                     } else {
                         eprintln!("Error: --dir requires a value");
                     }
@@ -71,7 +70,6 @@ impl RedisGlobal {
                 "--dbfilename" => {
                     if let Some(val) = args.next() {
                         dbfilename = val.to_string();
-                        println!("Set dbfilename to: {}", dbfilename);
                     } else {
                         eprintln!("Error: --dbfilename requires a value");
                     }

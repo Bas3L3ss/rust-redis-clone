@@ -44,6 +44,7 @@ fn main() {
     );
 
     let duration = start.elapsed();
+    println!("{global_state:#?}");
     eprintln!("initialization took {:?}", duration);
 
     listen_for_clients(listener, db, db_config, global_state);
