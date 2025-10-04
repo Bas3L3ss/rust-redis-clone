@@ -247,14 +247,6 @@ pub fn sync_with_master(
     stream.write_all(psync_cmd.as_bytes()).unwrap();
     stream.flush().unwrap();
 
-    {
-        let mut resp = [0u8; 1024];
-        let n = stream.read(&mut resp).unwrap();
-        if n == 0 {
-            panic!("No response from master after PSYNC");
-        }
-    }
-
     loop {
         let mut header = Vec::new();
         while header.len() < 2 || !header.ends_with(b"\r\n") {
