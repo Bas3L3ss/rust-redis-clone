@@ -1,6 +1,5 @@
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
-use crate::structs::global;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
     is_matched, write_array, write_bulk_string, write_error, write_file, write_integer,
