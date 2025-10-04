@@ -189,10 +189,22 @@ pub fn sync_with_master(
 ) -> TcpStream {
     let mut stream = TcpStream::connect(format!("{}:{}", host, port_str)).unwrap();
 
+    // Send PING
     let ping_cmd = b"*1\r\n$4\r\nPING\r\n";
     stream.write_all(ping_cmd).unwrap();
     stream.flush().unwrap();
 
+    // Wait for PING response
+    {
+        let mut resp = [0u8; 1024];
+        let n = stream.read(&mut resp).unwrap();
+        if n == 0 {
+            panic!("No response from master after PING");
+        }
+        // Optionally, check for "+PONG\r\n"
+    }
+
+    // Send REPLCONF listening-port
     let port_str = listening_port.to_string();
     let replconf_listen = format!(
         "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n${}\r\n{}\r\n",
@@ -202,9 +214,30 @@ pub fn sync_with_master(
     stream.write_all(replconf_listen.as_bytes()).unwrap();
     stream.flush().unwrap();
 
+    // Wait for REPLCONF listening-port response
+    {
+        let mut resp = [0u8; 1024];
+        let n = stream.read(&mut resp).unwrap();
+        if n == 0 {
+            panic!("No response from master after REPLCONF listening-port");
+        }
+        // Optionally, check for "+OK\r\n"
+    }
+
+    // Send REPLCONF capa psync2
     let replconf_capa = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
     stream.write_all(replconf_capa.as_bytes()).unwrap();
     stream.flush().unwrap();
+
+    // Wait for REPLCONF capa response
+    {
+        let mut resp = [0u8; 1024];
+        let n = stream.read(&mut resp).unwrap();
+        if n == 0 {
+            panic!("No response from master after REPLCONF capa");
+        }
+        // Optionally, check for "+OK\r\n"
+    }
 
     // let psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
     // stream.write_all(psync_cmd.as_bytes()).unwrap();
