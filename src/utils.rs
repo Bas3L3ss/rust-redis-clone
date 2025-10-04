@@ -193,18 +193,18 @@ pub fn sync_with_master(
     stream.write_all(ping_cmd).unwrap();
     stream.flush().unwrap();
 
-    // let port_str = listening_port.to_string();
-    // let replconf_listen = format!(
-    //     "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n${}\r\n{}\r\n",
-    //     port_str.len(),
-    //     port_str
-    // );
-    // stream.write_all(replconf_listen.as_bytes()).unwrap();
-    // stream.flush().unwrap();
+    let port_str = listening_port.to_string();
+    let replconf_listen = format!(
+        "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n${}\r\n{}\r\n",
+        port_str.len(),
+        port_str
+    );
+    stream.write_all(replconf_listen.as_bytes()).unwrap();
+    stream.flush().unwrap();
 
-    // let replconf_capa = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
-    // stream.write_all(replconf_capa.as_bytes()).unwrap();
-    // stream.flush().unwrap();
+    let replconf_capa = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+    stream.write_all(replconf_capa.as_bytes()).unwrap();
+    stream.flush().unwrap();
 
     // let psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
     // stream.write_all(psync_cmd.as_bytes()).unwrap();
