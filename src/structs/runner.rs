@@ -1,5 +1,6 @@
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
+use crate::structs::global;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
     is_matched, write_array, write_bulk_string, write_error, write_file, write_integer,
@@ -59,16 +60,16 @@ impl Runner {
                 self.cur_step += self.handle_echo(stream, args);
             }
             "SET" => {
-                self.cur_step += self.handle_set(stream, args, db, db_config);
+                self.cur_step += self.handle_set(stream, args, db, db_config, global_state);
             }
             "GET" => {
                 self.cur_step += self.handle_get(stream, args, db, db_config);
             }
             "DEL" => {
-                self.cur_step += self.handle_del(stream, args, db, db_config);
+                self.cur_step += self.handle_del(stream, args, db, db_config, global_state);
             }
             "CONFIG" => {
-                self.cur_step += self.handle_config(stream, args);
+                self.cur_step += self.handle_config(stream, args, global_state);
             }
             "KEYS" => {
                 self.cur_step += self.handle_keys(stream, args, db, db_config);
@@ -80,7 +81,7 @@ impl Runner {
                 self.cur_step += self.handle_replconf(stream, args, global_state, connection);
             }
             "PSYNC" => {
-                self.cur_step += self.handle_psync(stream, args, global_state);
+                self.cur_step += self.handle_psync(stream, args, global_state, connection);
             }
             _ => {
                 write_error(stream, "unknown command");
@@ -93,8 +94,9 @@ impl Runner {
         stream: &mut TcpStream,
         args: &[String],
         global_state: &RedisGlobalType,
+        connection: &mut Connection,
     ) -> usize {
-        let global = global_state.lock().unwrap();
+        let mut global = global_state.lock().unwrap();
         if args.len() >= 2 {
             write_simple_string(
                 stream,
@@ -105,6 +107,11 @@ impl Runner {
             );
 
             write_file(stream, &global.dbfilename);
+
+            let stream_clone = stream.try_clone().unwrap();
+            if let Some(ref slave_port) = connection.slave_port {
+                global.set_slave_streams(slave_port.clone(), stream_clone);
+            }
             return 2;
         }
         0
@@ -247,16 +254,22 @@ impl Runner {
         }
     }
 
-    fn handle_config(&self, stream: &mut TcpStream, args: &[String]) -> usize {
+    fn handle_config(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        global_state: &RedisGlobalType,
+    ) -> usize {
         if args.len() >= 2 && args[0].to_ascii_uppercase() == "GET" {
             let mut consumed = 1;
+            let global = global_state.lock().unwrap();
             match args[1].to_ascii_lowercase().as_str() {
                 "dir" => {
-                    write_array(stream, &[Some("dir"), Some("/tmp/rdb-2261")]);
+                    write_array(stream, &[Some("dir"), Some(&global.dir_path)]);
                     consumed += 1;
                 }
                 "dbfilename" => {
-                    write_array(stream, &[Some("dbfilename"), Some("dump.rdb")]);
+                    write_array(stream, &[Some("dbfilename"), Some(&global.dbfilename)]);
                     consumed += 1;
                 }
                 _ => {
@@ -268,89 +281,6 @@ impl Runner {
             write_array::<&str>(stream, &[]);
             0
         }
-    }
-
-    fn handle_set(
-        &self,
-        stream: &mut TcpStream,
-        args: &[String],
-        db: &DbType,
-        db_config: &DbConfigType,
-    ) -> usize {
-        if args.len() < 2 {
-            write_error(stream, "wrong number of arguments for 'SET'");
-            return 0;
-        }
-        let mut consumed = 0;
-
-        let key = args[0].clone();
-        let value = args[1].clone();
-        consumed += 2;
-
-        let mut config: Config = Default::default();
-
-        let mut idx = 2;
-
-        while idx < args.len() {
-            let opt = args[idx].to_ascii_uppercase();
-            match opt.as_str() {
-                "EX" => {
-                    if let Some(sec_str) = args.get(idx + 1) {
-                        if let Ok(secs) = sec_str.parse::<u64>() {
-                            let now_ms = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as u64;
-                            let expire_at = now_ms + (secs as u64) * 1000;
-                            config.expire_at = Some(expire_at);
-                        } else {
-                            write_error(stream, "invalid EX argument");
-                            return 0;
-                        }
-                        idx += 2;
-                    } else {
-                        write_error(stream, "missing EX argument");
-                        return 0;
-                    }
-                    consumed += 2;
-                }
-                "PX" => {
-                    if let Some(ms_str) = args.get(idx + 1) {
-                        if let Ok(ms) = ms_str.parse::<u64>() {
-                            // Calculate expire_at as ms since epoch
-                            let now_ms = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as u64;
-                            let expire_at = now_ms + (ms as u64);
-                            config.expire_at = Some(expire_at);
-                        } else {
-                            write_error(stream, "invalid PX argument");
-                            return 0;
-                        }
-                        idx += 2;
-                    } else {
-                        write_error(stream, "missing PX argument");
-                        return 0;
-                    }
-                    consumed += 2;
-                }
-                _ => {
-                    break;
-                }
-            }
-        }
-
-        {
-            let mut map = db.lock().unwrap();
-            map.insert(key.clone(), value);
-        }
-        {
-            let mut config_map = db_config.lock().unwrap();
-            config_map.insert(key, config);
-        }
-        write_simple_string(stream, "OK");
-        consumed
     }
 
     fn handle_get(
@@ -390,29 +320,161 @@ impl Runner {
         1
     }
 
+    fn handle_set(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        db_config: &DbConfigType,
+        global_state: &RedisGlobalType,
+    ) -> usize {
+        if args.len() < 2 {
+            write_error(stream, "wrong number of arguments for 'SET'");
+            return 0;
+        }
+        let mut consumed = 0;
+
+        let key = args[0].clone();
+        let value = args[1].clone();
+        consumed += 2;
+
+        let mut config: Config = Default::default();
+
+        let mut idx = 2;
+        let mut ex_arg: Option<String> = None;
+        let mut px_arg: Option<String> = None;
+
+        while idx < args.len() {
+            let opt = args[idx].to_ascii_uppercase();
+            match opt.as_str() {
+                "EX" => {
+                    if let Some(sec_str) = args.get(idx + 1) {
+                        if let Ok(secs) = sec_str.parse::<u64>() {
+                            let now_ms = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis() as u64;
+                            let expire_at = now_ms + (secs as u64) * 1000;
+                            config.expire_at = Some(expire_at);
+                            ex_arg = Some(sec_str.clone());
+                        } else {
+                            write_error(stream, "invalid EX argument");
+                            return 0;
+                        }
+                        idx += 2;
+                    } else {
+                        write_error(stream, "missing EX argument");
+                        return 0;
+                    }
+                    consumed += 2;
+                }
+                "PX" => {
+                    if let Some(ms_str) = args.get(idx + 1) {
+                        if let Ok(ms) = ms_str.parse::<u64>() {
+                            let now_ms = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis() as u64;
+                            let expire_at = now_ms + (ms as u64);
+                            config.expire_at = Some(expire_at);
+                            px_arg = Some(ms_str.clone());
+                        } else {
+                            write_error(stream, "invalid PX argument");
+                            return 0;
+                        }
+                        idx += 2;
+                    } else {
+                        write_error(stream, "missing PX argument");
+                        return 0;
+                    }
+                    consumed += 2;
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        {
+            let mut map = db.lock().unwrap();
+            map.insert(key.clone(), value.clone());
+        }
+        {
+            let mut config_map = db_config.lock().unwrap();
+            config_map.insert(key.clone(), config);
+        }
+
+        // Propagate to slaves, with correct SET form
+        let propagation = if let Some(ex) = ex_arg {
+            format!(
+                "*5\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n$2\r\nEX\r\n${}\r\n{}\r\n",
+                key.len(),
+                key,
+                value.len(),
+                value,
+                ex.len(),
+                ex
+            )
+        } else if let Some(px) = px_arg {
+            format!(
+                "*5\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n$2\r\nPX\r\n${}\r\n{}\r\n",
+                key.len(),
+                key,
+                value.len(),
+                value,
+                px.len(),
+                px
+            )
+        } else {
+            format!(
+                "*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                key.len(),
+                key,
+                value.len(),
+                value
+            )
+        };
+
+        self.propogate_slaves(global_state, &propagation);
+
+        write_simple_string(stream, "OK");
+        consumed
+    }
+
     fn handle_del(
         &self,
         stream: &mut TcpStream,
         args: &[String],
         db: &DbType,
         db_config: &DbConfigType,
+        global_state: &RedisGlobalType,
     ) -> usize {
         if args.is_empty() {
             write_error(stream, "wrong number of arguments for 'DEL'");
             return 0;
         }
+        let key = &args[0];
         let mut removed = 0;
         {
             let mut map = db.lock().unwrap();
             let mut config_map = db_config.lock().unwrap();
-            for key in args {
-                if map.remove(key).is_some() {
-                    removed += 1;
-                }
-                config_map.remove(key);
+            if map.remove(key).is_some() {
+                removed += 1;
             }
+            config_map.remove(key);
+            self.propogate_slaves(
+                global_state,
+                &format!("*2\r\n$3\r\nDEL\r\n${}\r\n{}\r\n", key.len(), key),
+            );
         }
         write_integer(stream, removed);
         1
+    }
+
+    fn propogate_slaves(&self, global_state: &RedisGlobalType, message: &str) {
+        let mut global_guard = global_state.lock().unwrap();
+        for stream in global_guard.slave_streams.values_mut() {
+            write_simple_string(stream, message);
+        }
     }
 }

@@ -8,9 +8,10 @@ pub struct RedisGlobal {
     pub master: Option<(String, String)>,
     pub master_stream: Option<TcpStream>,
     pub slave_caps: HashMap<String, Vec<String>>,
+    pub slave_streams: HashMap<String, TcpStream>,
     pub master_replid: String,
     pub master_repl_offset: usize,
-    pub dir_string: String,
+    pub dir_path: String,
     pub dbfilename: String,
 }
 
@@ -21,6 +22,9 @@ impl RedisGlobal {
 
     pub fn set_slave_caps(&mut self, slave_port: String, caps: Vec<String>) {
         self.slave_caps.insert(slave_port, caps);
+    }
+    pub fn set_slave_streams(&mut self, slave_port: String, stream: TcpStream) {
+        self.slave_streams.insert(slave_port, stream);
     }
 
     pub fn set_master(&mut self, master: Option<(String, String)>) {
@@ -40,8 +44,8 @@ impl RedisGlobal {
         let mut master: Option<(String, String)> = None;
         let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
         let master_repl_offset = 0;
-        let dir_string = String::from("/tmp/rdb-2261");
-        let dbfilename = String::from("dump.rdb");
+        let mut dir_path = String::from("/var/tmp/redis");
+        let mut dbfilename = String::from("dump.rdb");
         let mut master_stream = None;
 
         args.next(); // skip program name
@@ -53,6 +57,9 @@ impl RedisGlobal {
                         port = val;
                     }
                 }
+                "--dir" => dir_path = args.next().unwrap().to_string(),
+                "--dbfilename" => dbfilename = args.next().unwrap().to_string(),
+
                 "--replicaof" => {
                     if let Some(host_port) = args.next() {
                         let mut parts = host_port.splitn(2, ' ');
@@ -71,11 +78,12 @@ impl RedisGlobal {
             port,
             master,
             slave_caps: HashMap::new(),
+            slave_streams: HashMap::new(),
             master_repl_offset,
             master_stream,
             master_replid: master_replid.to_string(),
             dbfilename,
-            dir_string,
+            dir_path,
         }
     }
 }
