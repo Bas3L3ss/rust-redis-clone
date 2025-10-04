@@ -10,7 +10,8 @@ use crate::{
 
 pub fn start_up(db: DbType, db_config: DbConfigType, global_state: RedisGlobalType) {
     let global = global_state.lock().unwrap();
-    let file = match File::open(&global.dbfilename) {
+    let db_path = format!("{}/{}", global.dir_path, global.dbfilename);
+    let file = match File::open(&db_path) {
         Ok(f) => f,
         Err(_) => return,
     };
