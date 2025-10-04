@@ -242,36 +242,33 @@ pub fn sync_with_master(
         }
     }
 
-    loop {
-        let mut header = Vec::new();
-        while header.len() < 2 || !header.ends_with(b"\r\n") {
-            let mut byte = [0u8; 1];
-            let n = stream.read(&mut byte).unwrap();
-            if n == 0 {
-                break;
-            }
-            header.push(byte[0]);
+    let mut header = Vec::new();
+    while header.len() < 2 || !header.ends_with(b"\r\n") {
+        let mut byte = [0u8; 1];
+        let n = stream.read(&mut byte).unwrap();
+        if n == 0 {
+            break;
         }
+        header.push(byte[0]);
+    }
 
-        if header.starts_with(b"$") {
-            // Parse the length
-            let header_str = String::from_utf8_lossy(&header);
-            if let Some(idx) = header_str.find("\r\n") {
-                let len_str = &header_str[1..idx];
-                if let Ok(file_len) = len_str.parse::<usize>() {
-                    // Read the binary contents of the file
-                    let mut file_contents = vec![0u8; file_len];
-                    let mut read_total = 0;
-                    while read_total < file_len {
-                        let n = stream.read(&mut file_contents[read_total..]).unwrap();
-                        if n == 0 {
-                            break;
-                        }
-                        read_total += n;
+    if header.starts_with(b"$") {
+        // Parse the length
+        let header_str = String::from_utf8_lossy(&header);
+        if let Some(idx) = header_str.find("\r\n") {
+            let len_str = &header_str[1..idx];
+            if let Ok(file_len) = len_str.parse::<usize>() {
+                // Read the binary contents of the file
+                let mut file_contents = vec![0u8; file_len];
+                let mut read_total = 0;
+                while read_total < file_len {
+                    let n = stream.read(&mut file_contents[read_total..]).unwrap();
+                    if n == 0 {
+                        break;
                     }
-                    write_to_file(&dbfilename, file_contents).unwrap();
-                    break;
+                    read_total += n;
                 }
+                write_to_file(&dbfilename, file_contents).unwrap();
             }
         }
     }
