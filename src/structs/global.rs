@@ -32,7 +32,7 @@ impl RedisGlobal {
     }
 
     pub fn is_master(&self) -> bool {
-        if self.master.is_some() && self.master_stream.is_some() {
+        if self.master.is_some() || self.master_stream.is_some() {
             return false;
         }
 
