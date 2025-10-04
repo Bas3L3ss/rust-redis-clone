@@ -230,9 +230,17 @@ pub fn sync_with_master(
         }
     }
 
-    // let psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
-    // stream.write_all(psync_cmd.as_bytes()).unwrap();
-    // stream.flush().unwrap();
+    let psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    stream.write_all(psync_cmd.as_bytes()).unwrap();
+    stream.flush().unwrap();
+
+    {
+        let mut resp = [0u8; 1024];
+        let n = stream.read(&mut resp).unwrap();
+        if n == 0 {
+            panic!("No response from master after PSYNC");
+        }
+    }
 
     // loop {
     //     let mut header = Vec::new();
