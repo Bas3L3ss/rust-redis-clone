@@ -192,7 +192,6 @@ pub fn sync_with_master(
     let ping_cmd = b"*1\r\n$4\r\nPING\r\n";
     stream.write_all(ping_cmd).unwrap();
     stream.flush().unwrap();
-    let mut buf = [0u8; 4096];
 
     let port_str = listening_port.to_string();
     let replconf_listen = format!(

@@ -96,6 +96,7 @@ impl Runner {
         connection: &mut Connection,
     ) -> usize {
         let mut global = global_state.lock().unwrap();
+        println!("{args:#?}");
         if args.len() >= 2 {
             write_simple_string(
                 stream,
