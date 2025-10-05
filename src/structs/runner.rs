@@ -104,10 +104,57 @@ impl Runner {
             "psync" => {
                 self.cur_step += self.handle_psync(stream, args, global_state, connection);
             }
+            "wait" => {
+                self.cur_step += self.handle_wait(stream, args, global_state, connection);
+            }
+
             _ => {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    pub fn handle_wait(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        global_state: &RedisGlobalType,
+        _connection: &mut Connection,
+    ) -> usize {
+        if args.len() < 2 {
+            write_error(stream, "wrong number of arguments for 'WAIT'");
+            return 0;
+        }
+
+        let numreplicas = match args[0].parse::<usize>() {
+            Ok(n) => n,
+            Err(_) => {
+                write_error(stream, "ERR invalid number of replicas");
+                return 0;
+            }
+        };
+
+        let _timeout = match args[1].parse::<u64>() {
+            Ok(t) => t,
+            Err(_) => {
+                write_error(stream, "ERR invalid timeout");
+                return 0;
+            }
+        };
+
+        // For simplicity, just count the number of connected replicas
+        let global = global_state.lock().unwrap();
+        let connected_replicas = global.replica_states.len();
+
+        // In a real implementation, would wait for ACKs or replication offset
+        let satisfied = if connected_replicas >= numreplicas {
+            numreplicas
+        } else {
+            connected_replicas
+        };
+
+        write_integer(stream, 0);
+        2
     }
 
     pub fn handle_psync(

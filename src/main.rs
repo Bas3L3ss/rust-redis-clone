@@ -65,6 +65,7 @@ pub fn spawn_replica_handler_thread(
                 thread::sleep(Duration::from_secs(1));
 
                 let mut global_guard = global_state.lock().unwrap();
+                let master_offset = global_guard.offset_replica_sync as i64;
 
                 for (slave_port, replica_arc) in global_guard.replica_states.iter_mut() {
                     if let Ok(mut replica) = replica_arc.lock() {
@@ -85,20 +86,17 @@ pub fn spawn_replica_handler_thread(
                             .ok();
                         match replica.stream.read(&mut buf) {
                             Ok(n) if n > 0 => {
-                                let resp = String::from_utf8_lossy(&buf[..n]);
-                                // Check if the response is REPLCONF ACK 0
-                                if resp.contains("REPLCONF") && resp.contains("ACK") {
-                                    println!(
-                                        "Slave {} replied with: {}",
-                                        slave_port,
-                                        resp.trim_end()
-                                    );
-                                } else {
-                                    println!(
-                                        "Slave {} sent unexpected reply: {}",
-                                        slave_port,
-                                        resp.trim_end()
-                                    );
+                                let req = Request::new_from_buffer(&buf[..n]);
+                                if req.args.len() >= 3
+                                    && req.args[0].eq_ignore_ascii_case("REPLCONF")
+                                    && req.args[1].eq_ignore_ascii_case("ACK")
+                                {
+                                    if let Ok(replica_offset) = req.args[2].parse::<i64>() {
+                                        let diff = master_offset - replica_offset;
+                                        if diff != 0 {
+                                            eprintln!("replica is behind the master by {}", diff);
+                                        }
+                                    }
                                 }
                             }
                             Ok(_) => {} // No data
