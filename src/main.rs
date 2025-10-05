@@ -37,7 +37,7 @@ fn main() {
         Arc::clone(&global_state),
     );
     spawn_cleanup_thread(Arc::clone(&db), Arc::clone(&db_config));
-    spawn_client_thread(
+    spawn_replica_handler_thread(
         Arc::clone(&db),
         Arc::clone(&db_config),
         Arc::clone(&global_state),
@@ -49,7 +49,11 @@ fn main() {
     listen_for_clients(listener, db, db_config, global_state);
 }
 
-pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: RedisGlobalType) {
+pub fn spawn_replica_handler_thread(
+    db: DbType,
+    db_config: DbConfigType,
+    global_state: RedisGlobalType,
+) {
     let is_master = {
         let global_guard = global_state.lock().unwrap();
         global_guard.is_master()
@@ -68,11 +72,13 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
                             &mut replica.stream,
                             &[Some("REPLCONF"), Some("GETACK"), Some("*")],
                         );
+
                         if let Err(e) = replica.stream.flush() {
                             eprintln!("Failed to flush ACK to slave {}: {:?}", slave_port, e);
                             continue;
                         }
 
+                        println!("HI");
                         let mut buf = [0u8; 1024];
                         replica
                             .stream
