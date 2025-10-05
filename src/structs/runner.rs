@@ -5,6 +5,7 @@ use crate::utils::{
     is_matched, propogate_slaves, write_array, write_bulk_string, write_error, write_integer,
     write_null_bulk_string, write_redis_file, write_simple_string,
 };
+use std::io::Write;
 use std::net::TcpStream;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -177,14 +178,12 @@ impl Runner {
 
                 "getack" => {
                     if args.len() >= 2 {
-                        write_array(
-                            stream,
-                            &[
-                                Some("REPLCONF"),
-                                Some("ACK"),
-                                Some(&local_offset.to_string()),
-                            ],
+                        let resp = format!(
+                            "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${}\r\n{}\r\n",
+                            local_offset.to_string().len(),
+                            local_offset
                         );
+                        let _ = stream.write_all(resp.as_bytes());
                         return 2;
                     }
 
