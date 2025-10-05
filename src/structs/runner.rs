@@ -63,7 +63,6 @@ impl Runner {
         let args = &self.args[self.cur_step + 1..];
 
         eprintln!("Received command: {:?}", command);
-        println!("hohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoho");
 
         match command.as_str() {
             "ping" => {
@@ -358,6 +357,8 @@ impl Runner {
     }
 
     fn handle_ping(&self, stream: &mut TcpStream) {
+        println!("hohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoho");
+
         write_simple_string(stream, "PONG");
     }
 
