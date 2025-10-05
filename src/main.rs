@@ -10,6 +10,7 @@ use codecrafters_redis::structs::global::RedisGlobal;
 use codecrafters_redis::structs::request::Request;
 use codecrafters_redis::structs::runner::Runner;
 use codecrafters_redis::types::{DbConfigType, DbType, RedisGlobalType};
+use codecrafters_redis::utils::num_bytes;
 use std::sync::{Arc, Mutex};
 
 fn main() {
@@ -59,25 +60,29 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
             loop {
                 thread::sleep(Duration::from_secs(1));
                 let ack_message = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n";
+                let bytes = num_bytes(ack_message);
 
                 let mut global_guard = global_state.lock().unwrap();
-                for (slave_port, stream_arc) in global_guard.slave_streams.iter_mut() {
-                    if let Ok(mut stream) = stream_arc.lock() {
+                global_guard.offset_replica_sync += bytes;
+
+                for (slave_port, replica_arc) in global_guard.replica_states.iter_mut() {
+                    if let Ok(mut replica) = replica_arc.lock() {
                         // Send the ACK message to the slave
-                        if let Err(e) = stream.write_all(ack_message.as_bytes()) {
+                        if let Err(e) = replica.stream.write_all(ack_message.as_bytes()) {
                             eprintln!("Failed to send ACK to slave {}: {:?}", slave_port, e);
                             continue;
                         }
-                        if let Err(e) = stream.flush() {
+                        if let Err(e) = replica.stream.flush() {
                             eprintln!("Failed to flush ACK to slave {}: {:?}", slave_port, e);
                             continue;
                         }
 
                         let mut buf = [0u8; 1024];
-                        stream
+                        replica
+                            .stream
                             .set_read_timeout(Some(Duration::from_millis(100)))
                             .ok();
-                        match stream.read(&mut buf) {
+                        match replica.stream.read(&mut buf) {
                             Ok(n) if n > 0 => {
                                 let resp = String::from_utf8_lossy(&buf[..n]);
                                 // Check if the response is REPLCONF ACK 0
@@ -108,7 +113,7 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
                             }
                         }
                         // Remove the timeout for future use
-                        stream.set_read_timeout(None).ok();
+                        replica.stream.set_read_timeout(None).ok();
                     }
                 }
             }
@@ -127,7 +132,7 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
             };
 
             let mut connection_info = Connection::default();
-
+            let mut local_offset = 0;
             loop {
                 let mut buffer = [0u8; 1024];
 
@@ -150,12 +155,15 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
 
                 let mut runner = Runner::new(request.args);
 
+                local_offset += bytes_read;
+
                 runner.run(
                     &mut stream_guard,
                     &db,
                     &db_config,
                     &global_state,
                     &mut connection_info,
+                    &local_offset,
                 );
             }
 
@@ -237,6 +245,7 @@ fn handle_connection(
             &db_config,
             &global_state,
             &mut connection_info,
+            &0,
         );
     }
 }

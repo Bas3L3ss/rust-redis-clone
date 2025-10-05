@@ -2,8 +2,8 @@ use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, propogate_slaves, write_array, write_bulk_string, write_error, write_integer,
-    write_null_bulk_string, write_redis_file, write_simple_string,
+    is_matched, num_bytes, propogate_slaves, write_array, write_bulk_string, write_error,
+    write_integer, write_null_bulk_string, write_redis_file, write_simple_string,
 };
 use std::net::TcpStream;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,9 +25,17 @@ impl Runner {
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         connection: &mut Connection,
+        local_offset: &usize,
     ) {
         while self.cur_step < self.args.len() {
-            self.step(stream, db, db_config, global_state, connection);
+            self.step(
+                stream,
+                db,
+                db_config,
+                global_state,
+                connection,
+                local_offset,
+            );
             self.cur_step += 1;
         }
     }
@@ -39,6 +47,7 @@ impl Runner {
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         connection: &mut Connection,
+        local_offset: &usize,
     ) {
         if self.args.is_empty() {
             write_error(stream, "empty command");
@@ -77,7 +86,8 @@ impl Runner {
                 self.handle_info(stream, args, db, db_config, global_state);
             }
             "replconf" => {
-                self.cur_step += self.handle_replconf(stream, args, global_state, connection);
+                self.cur_step +=
+                    self.handle_replconf(stream, args, global_state, connection, local_offset);
             }
             "psync" => {
                 self.cur_step += self.handle_psync(stream, args, global_state, connection);
@@ -125,6 +135,7 @@ impl Runner {
         args: &[String],
         global_state: &RedisGlobalType,
         connection: &mut Connection,
+        local_offset: &usize,
     ) -> usize {
         if args.len() >= 2 {
             let subcmd = args[0].to_ascii_lowercase();
@@ -166,7 +177,14 @@ impl Runner {
 
                 "getack" => {
                     if args.len() >= 2 {
-                        write_array(stream, &[Some("REPLCONF"), Some("ACK"), Some("0")]);
+                        write_array(
+                            stream,
+                            &[
+                                Some("REPLCONF"),
+                                Some("ACK"),
+                                Some(&local_offset.to_string()),
+                            ],
+                        );
                         return 2;
                     }
 
@@ -446,7 +464,6 @@ impl Runner {
                 value
             )
         };
-
         propogate_slaves(global_state, &propagation);
 
         write_simple_string(stream, "OK");

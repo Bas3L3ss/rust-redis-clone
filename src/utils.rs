@@ -294,11 +294,20 @@ pub fn write_to_file(filename: &str, contents: Vec<u8>) -> std::io::Result<()> {
 
 pub fn propogate_slaves(global_state: &RedisGlobalType, message: &str) {
     let mut global_guard = global_state.lock().unwrap();
-    for stream_arc in global_guard.slave_streams.values_mut() {
-        if let Ok(mut stream) = stream_arc.lock() {
-            if let Err(e) = stream.write_all(message.as_bytes()) {
+    global_guard.offset_replica_sync += num_bytes(message);
+    for replica_arc in global_guard.replica_states.values_mut() {
+        if let Ok(mut replica) = replica_arc.lock() {
+            if let Err(e) = replica.stream.write_all(message.as_bytes()) {
                 eprintln!("Failed to propagate to slave: {:?}", e);
             }
         }
     }
+}
+
+pub fn offset_difference(master_offset: usize, replica_offset: usize) -> usize {
+    master_offset - replica_offset
+}
+
+pub fn num_bytes(s: &str) -> usize {
+    s.as_bytes().len()
 }

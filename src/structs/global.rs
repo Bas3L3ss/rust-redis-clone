@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::structs::replica::ReplicaState;
 use crate::utils::sync_with_master;
 
 #[derive(Debug)]
@@ -12,12 +13,13 @@ pub struct RedisGlobal {
     pub port: String,
     pub master_address: Option<(String, String)>,
     pub master_stream: Option<Arc<Mutex<TcpStream>>>,
-    pub slave_caps: HashMap<String, Vec<String>>,
-    pub slave_streams: HashMap<String, Arc<Mutex<TcpStream>>>,
+    pub replica_caps: HashMap<String, Vec<String>>,
+    pub replica_states: HashMap<String, Arc<Mutex<ReplicaState>>>,
     pub master_replid: String,
     pub master_repl_offset: usize,
     pub dir_path: String,
     pub dbfilename: String,
+    pub offset_replica_sync: usize,
 }
 
 impl RedisGlobal {
@@ -26,11 +28,11 @@ impl RedisGlobal {
     }
 
     pub fn set_slave_caps(&mut self, slave_port: String, caps: Vec<String>) {
-        self.slave_caps.insert(slave_port, caps);
+        self.replica_caps.insert(slave_port, caps);
     }
     pub fn set_slave_streams(&mut self, slave_port: String, stream: TcpStream) {
-        self.slave_streams
-            .insert(slave_port, Arc::new(Mutex::new(stream)));
+        self.replica_states
+            .insert(slave_port, Arc::new(Mutex::new(ReplicaState::new(stream))));
     }
 
     pub fn set_master(&mut self, master: Option<(String, String)>) {
@@ -97,13 +99,14 @@ impl RedisGlobal {
         RedisGlobal {
             port,
             master_address,
-            slave_caps: HashMap::new(),
-            slave_streams: HashMap::new(),
+            replica_caps: HashMap::new(),
+            replica_states: HashMap::new(),
             master_repl_offset,
             master_stream,
             master_replid: master_replid.to_string(),
             dbfilename,
             dir_path,
+            offset_replica_sync: 0,
         }
     }
 }
