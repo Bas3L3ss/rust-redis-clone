@@ -1,12 +1,13 @@
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
+use crate::structs::replica::add_replica;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, propogate_slaves, write_array, write_bulk_string, write_error, write_integer,
+    is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
     write_null_bulk_string, write_redis_file, write_simple_string,
 };
 use std::net::TcpStream;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct Runner {
     pub args: Vec<String>,
@@ -134,7 +135,7 @@ impl Runner {
             }
         };
 
-        let _timeout = match args[1].parse::<u64>() {
+        let timeout_ms = match args[1].parse::<u64>() {
             Ok(t) => t,
             Err(_) => {
                 write_error(stream, "ERR invalid timeout");
@@ -146,8 +147,41 @@ impl Runner {
         let global = global_state.lock().unwrap();
         let connected_replicas = global.replica_states.len();
 
-        write_integer(stream, connected_replicas as i64);
-        2
+        let satisfied = if connected_replicas >= numreplicas {
+            numreplicas
+        } else {
+            connected_replicas
+        };
+
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+
+        let offset = {
+            let guard = global_state.lock().unwrap();
+            guard.offset_replica_sync
+        };
+
+        loop {
+            {
+                let guard = global_state.lock().unwrap();
+                let acks = guard
+                    .replica_states
+                    .values()
+                    .filter(|replica| replica.local_offset == offset)
+                    .count();
+
+                if acks >= satisfied {
+                    write_integer(stream, satisfied as i64);
+                    return 2;
+                }
+
+                if Instant::now() >= deadline {
+                    write_integer(stream, satisfied as i64);
+                    return 2;
+                }
+            }
+
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     pub fn handle_psync(
@@ -157,7 +191,7 @@ impl Runner {
         global_state: &RedisGlobalType,
         connection: &mut Connection,
     ) -> usize {
-        let mut global = global_state.lock().unwrap();
+        let global = global_state.lock().unwrap();
         if args.len() >= 2 {
             write_simple_string(
                 stream,
@@ -174,7 +208,7 @@ impl Runner {
 
             let stream_clone = stream.try_clone().unwrap();
             if let Some(ref slave_port) = connection.slave_port {
-                global.set_slave_streams(slave_port.clone(), stream_clone);
+                add_replica(global_state, stream_clone, slave_port)
             }
             return 2;
         }
@@ -531,7 +565,7 @@ impl Runner {
                 value
             )
         };
-        propogate_slaves(global_state, &propagation);
+        propagate_slaves(global_state, &propagation);
 
         if !is_slave_and_propagation {
             write_simple_string(stream, "OK");
@@ -568,14 +602,14 @@ impl Runner {
                 removed += 1;
             }
             config_map.remove(key);
-            propogate_slaves(
-                global_state,
-                &format!("*2\r\n$3\r\nDEL\r\n${}\r\n{}\r\n", key.len(), key),
-            );
         }
         if !is_slave_and_propagation {
             write_integer(stream, removed);
         }
+        propagate_slaves(
+            global_state,
+            &format!("*2\r\n$3\r\nDEL\r\n${}\r\n{}\r\n", key.len(), key),
+        );
         1
     }
 }

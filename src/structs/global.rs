@@ -14,7 +14,7 @@ pub struct RedisGlobal {
     pub master_address: Option<(String, String)>,
     pub master_stream: Option<Arc<Mutex<TcpStream>>>,
     pub replica_caps: HashMap<String, Vec<String>>,
-    pub replica_states: HashMap<String, Arc<Mutex<ReplicaState>>>,
+    pub replica_states: HashMap<String, ReplicaState>,
     pub master_replid: String,
     pub master_repl_offset: usize,
     pub dir_path: String,
@@ -29,10 +29,6 @@ impl RedisGlobal {
 
     pub fn set_slave_caps(&mut self, slave_port: String, caps: Vec<String>) {
         self.replica_caps.insert(slave_port, caps);
-    }
-    pub fn set_slave_streams(&mut self, slave_port: String, stream: TcpStream) {
-        self.replica_states
-            .insert(slave_port, Arc::new(Mutex::new(ReplicaState::new(stream))));
     }
 
     pub fn set_master(&mut self, master: Option<(String, String)>) {

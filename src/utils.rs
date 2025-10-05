@@ -297,14 +297,16 @@ pub fn write_to_file(filename: &str, contents: Vec<u8>) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn propogate_slaves(global_state: &RedisGlobalType, message: &str) {
+pub fn propagate_slaves(global_state: &RedisGlobalType, message: &str) {
+    let msg = message.to_string();
+
     let mut global_guard = global_state.lock().unwrap();
-    global_guard.offset_replica_sync += num_bytes(message);
-    for replica_arc in global_guard.replica_states.values_mut() {
-        if let Ok(mut replica) = replica_arc.lock() {
-            if let Err(e) = replica.stream.write_all(message.as_bytes()) {
-                eprintln!("Failed to propagate to slave: {:?}", e);
-            }
+    global_guard.offset_replica_sync += num_bytes(&msg);
+
+    for replica in global_guard.replica_states.values() {
+        // Send message to replica’s channel
+        if let Err(e) = replica.sender.send(msg.clone()) {
+            eprintln!("Failed to queue message for replica: {:?}", e);
         }
     }
 }
