@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
@@ -36,7 +36,6 @@ fn main() {
         Arc::clone(&global_state),
     );
     spawn_cleanup_thread(Arc::clone(&db), Arc::clone(&db_config));
-
     spawn_client_thread(
         Arc::clone(&db),
         Arc::clone(&db_config),
@@ -50,57 +49,119 @@ fn main() {
 }
 
 pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: RedisGlobalType) {
-    thread::spawn(move || {
-        let master_stream_arc = {
-            let global_guard = global_state.lock().unwrap();
-            if global_guard.is_master() {
-                return;
-            }
+    let is_master = {
+        let global_guard = global_state.lock().unwrap();
+        global_guard.is_master()
+    };
 
-            match &global_guard.master_stream {
-                Some(stream_arc) => Arc::clone(stream_arc),
-                None => {
-                    eprintln!("No master stream found; aborting replication thread");
-                    return;
+    if is_master {
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(1));
+                let ack_message = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n";
+
+                let mut global_guard = global_state.lock().unwrap();
+                for (slave_port, stream_arc) in global_guard.slave_streams.iter_mut() {
+                    if let Ok(mut stream) = stream_arc.lock() {
+                        // Send the ACK message to the slave
+                        if let Err(e) = stream.write_all(ack_message.as_bytes()) {
+                            eprintln!("Failed to send ACK to slave {}: {:?}", slave_port, e);
+                            continue;
+                        }
+                        if let Err(e) = stream.flush() {
+                            eprintln!("Failed to flush ACK to slave {}: {:?}", slave_port, e);
+                            continue;
+                        }
+
+                        let mut buf = [0u8; 1024];
+                        stream
+                            .set_read_timeout(Some(Duration::from_millis(100)))
+                            .ok();
+                        match stream.read(&mut buf) {
+                            Ok(n) if n > 0 => {
+                                let resp = String::from_utf8_lossy(&buf[..n]);
+                                // Check if the response is REPLCONF ACK 0
+                                if resp.contains("REPLCONF")
+                                    && resp.contains("ACK")
+                                    && resp.contains("0")
+                                {
+                                    println!(
+                                        "Slave {} replied with: {}",
+                                        slave_port,
+                                        resp.trim_end()
+                                    );
+                                } else {
+                                    println!(
+                                        "Slave {} sent unexpected reply: {}",
+                                        slave_port,
+                                        resp.trim_end()
+                                    );
+                                }
+                            }
+                            Ok(_) => {} // No data
+                            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                            Err(e) => {
+                                eprintln!(
+                                    "Error reading response from slave {}: {:?}",
+                                    slave_port, e
+                                );
+                            }
+                        }
+                        // Remove the timeout for future use
+                        stream.set_read_timeout(None).ok();
+                    }
                 }
             }
-        };
-
-        let mut connection_info = Connection::default();
-
-        loop {
-            let mut buffer = [0u8; 1024];
-
-            let mut stream_guard = master_stream_arc.lock().unwrap();
-            let bytes_read = {
-                match stream_guard.read(&mut buffer) {
-                    Ok(0) => {
-                        eprintln!("Master closed connection");
-                        break;
-                    }
-                    Ok(n) => n,
-                    Err(e) => {
-                        eprintln!("Read error from master: {e}");
-                        break;
+        });
+    } else {
+        thread::spawn(move || {
+            let master_stream_arc = {
+                let global_guard = global_state.lock().unwrap();
+                match &global_guard.master_stream {
+                    Some(stream_arc) => Arc::clone(stream_arc),
+                    None => {
+                        eprintln!("No master stream found; aborting replication thread");
+                        return;
                     }
                 }
             };
 
-            let request = Request::new_from_buffer(&buffer[..bytes_read]);
+            let mut connection_info = Connection::default();
 
-            let mut runner = Runner::new(request.args);
+            loop {
+                let mut buffer = [0u8; 1024];
 
-            runner.run(
-                &mut stream_guard,
-                &db,
-                &db_config,
-                &global_state,
-                &mut connection_info,
-            );
-        }
+                let mut stream_guard = master_stream_arc.lock().unwrap();
+                let bytes_read = {
+                    match stream_guard.read(&mut buffer) {
+                        Ok(0) => {
+                            eprintln!("Master closed connection");
+                            break;
+                        }
+                        Ok(n) => n,
+                        Err(e) => {
+                            eprintln!("Read error from master: {e}");
+                            break;
+                        }
+                    }
+                };
 
-        eprintln!("Replication thread exiting; consider retrying sync with master");
-    });
+                let request = Request::new_from_buffer(&buffer[..bytes_read]);
+
+                let mut runner = Runner::new(request.args);
+
+                runner.run(
+                    &mut stream_guard,
+                    &db,
+                    &db_config,
+                    &global_state,
+                    &mut connection_info,
+                );
+            }
+
+            eprintln!("Replication thread exiting; consider retrying sync with master");
+        });
+    }
 }
 
 fn spawn_cleanup_thread(db: DbType, db_config: DbConfigType) {

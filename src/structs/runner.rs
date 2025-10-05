@@ -2,10 +2,9 @@ use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, write_array, write_bulk_string, write_error, write_integer, write_null_bulk_string,
-    write_redis_file, write_simple_string,
+    is_matched, propogate_slaves, write_array, write_bulk_string, write_error, write_integer,
+    write_null_bulk_string, write_redis_file, write_simple_string,
 };
-use std::io::Write;
 use std::net::TcpStream;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -47,40 +46,40 @@ impl Runner {
             return;
         }
 
-        let command = self.args[self.cur_step].to_ascii_uppercase();
+        let command = self.args[self.cur_step].to_ascii_lowercase();
         let args = &self.args[self.cur_step + 1..];
 
         eprintln!("Received command: {:?}", command);
 
         match command.as_str() {
-            "PING" => {
+            "ping" => {
                 self.handle_ping(stream);
             }
-            "ECHO" => {
+            "echo" => {
                 self.cur_step += self.handle_echo(stream, args);
             }
-            "SET" => {
+            "set" => {
                 self.cur_step += self.handle_set(stream, args, db, db_config, global_state);
             }
-            "GET" => {
+            "get" => {
                 self.cur_step += self.handle_get(stream, args, db, db_config);
             }
-            "DEL" => {
+            "del" => {
                 self.cur_step += self.handle_del(stream, args, db, db_config, global_state);
             }
-            "CONFIG" => {
+            "config" => {
                 self.cur_step += self.handle_config(stream, args, global_state);
             }
-            "KEYS" => {
+            "keys" => {
                 self.cur_step += self.handle_keys(stream, args, db, db_config);
             }
-            "INFO" => {
+            "info" => {
                 self.handle_info(stream, args, db, db_config, global_state);
             }
-            "REPLCONF" => {
+            "replconf" => {
                 self.cur_step += self.handle_replconf(stream, args, global_state, connection);
             }
-            "PSYNC" => {
+            "psync" => {
                 self.cur_step += self.handle_psync(stream, args, global_state, connection);
             }
             _ => {
@@ -162,6 +161,15 @@ impl Runner {
                         }
                         return 1 + caps.len();
                     }
+                    return 1;
+                }
+
+                "getack" => {
+                    if args.len() >= 2 {
+                        write_array(stream, &[Some("REPLCONF"), Some("ACK"), Some("0")]);
+                        return 2;
+                    }
+
                     return 1;
                 }
                 _ => return 0,
@@ -264,7 +272,7 @@ impl Runner {
         args: &[String],
         global_state: &RedisGlobalType,
     ) -> usize {
-        if args.len() >= 2 && args[0].to_ascii_uppercase() == "GET" {
+        if args.len() >= 2 && args[0].to_ascii_lowercase() == "get" {
             let mut consumed = 1;
             let global = global_state.lock().unwrap();
             match args[1].to_ascii_lowercase().as_str() {
@@ -349,9 +357,9 @@ impl Runner {
         let mut px_arg: Option<String> = None;
 
         while idx < args.len() {
-            let opt = args[idx].to_ascii_uppercase();
+            let opt = args[idx].to_ascii_lowercase();
             match opt.as_str() {
-                "EX" => {
+                "ex" => {
                     if let Some(sec_str) = args.get(idx + 1) {
                         if let Ok(secs) = sec_str.parse::<u64>() {
                             let now_ms = SystemTime::now()
@@ -372,7 +380,7 @@ impl Runner {
                     }
                     consumed += 2;
                 }
-                "PX" => {
+                "px" => {
                     if let Some(ms_str) = args.get(idx + 1) {
                         if let Ok(ms) = ms_str.parse::<u64>() {
                             let now_ms = SystemTime::now()
@@ -439,7 +447,7 @@ impl Runner {
             )
         };
 
-        self.propogate_slaves(global_state, &propagation);
+        propogate_slaves(global_state, &propagation);
 
         write_simple_string(stream, "OK");
         consumed
@@ -466,23 +474,12 @@ impl Runner {
                 removed += 1;
             }
             config_map.remove(key);
-            self.propogate_slaves(
+            propogate_slaves(
                 global_state,
                 &format!("*2\r\n$3\r\nDEL\r\n${}\r\n{}\r\n", key.len(), key),
             );
         }
         write_integer(stream, removed);
         1
-    }
-
-    fn propogate_slaves(&self, global_state: &RedisGlobalType, message: &str) {
-        let mut global_guard = global_state.lock().unwrap();
-        for stream_arc in global_guard.slave_streams.values_mut() {
-            if let Ok(mut stream) = stream_arc.lock() {
-                if let Err(e) = stream.write_all(message.as_bytes()) {
-                    eprintln!("Failed to propagate to slave: {:?}", e);
-                }
-            }
-        }
     }
 }

@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
+use crate::types::RedisGlobalType;
+
 pub fn write_simple_string(stream: &mut TcpStream, msg: &str) {
     let _ = stream.write_all(format!("+{}\r\n", msg).as_bytes());
 }
@@ -288,4 +290,15 @@ pub fn write_to_file(filename: &str, contents: Vec<u8>) -> std::io::Result<()> {
     file.write_all(&contents)?;
     eprintln!("file {filename} has been saved!");
     Ok(())
+}
+
+pub fn propogate_slaves(global_state: &RedisGlobalType, message: &str) {
+    let mut global_guard = global_state.lock().unwrap();
+    for stream_arc in global_guard.slave_streams.values_mut() {
+        if let Ok(mut stream) = stream_arc.lock() {
+            if let Err(e) = stream.write_all(message.as_bytes()) {
+                eprintln!("Failed to propagate to slave: {:?}", e);
+            }
+        }
+    }
 }
