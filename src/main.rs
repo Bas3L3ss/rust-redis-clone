@@ -63,7 +63,6 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
                 let bytes = num_bytes(ack_message);
 
                 let mut global_guard = global_state.lock().unwrap();
-                global_guard.offset_replica_sync += bytes;
 
                 for (slave_port, replica_arc) in global_guard.replica_states.iter_mut() {
                     if let Ok(mut replica) = replica_arc.lock() {
@@ -86,10 +85,7 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
                             Ok(n) if n > 0 => {
                                 let resp = String::from_utf8_lossy(&buf[..n]);
                                 // Check if the response is REPLCONF ACK 0
-                                if resp.contains("REPLCONF")
-                                    && resp.contains("ACK")
-                                    && resp.contains("0")
-                                {
+                                if resp.contains("REPLCONF") && resp.contains("ACK") {
                                     println!(
                                         "Slave {} replied with: {}",
                                         slave_port,
@@ -116,6 +112,7 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
                         replica.stream.set_read_timeout(None).ok();
                     }
                 }
+                global_guard.offset_replica_sync += bytes;
             }
         });
     } else {
@@ -155,8 +152,6 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
 
                 let mut runner = Runner::new(request.args);
 
-                local_offset += bytes_read;
-
                 runner.run(
                     &mut stream_guard,
                     &db,
@@ -165,6 +160,8 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
                     &mut connection_info,
                     &local_offset,
                 );
+
+                local_offset += bytes_read;
             }
 
             eprintln!("Replication thread exiting; consider retrying sync with master");

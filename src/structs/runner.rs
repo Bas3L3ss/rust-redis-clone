@@ -2,8 +2,8 @@ use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, num_bytes, propogate_slaves, write_array, write_bulk_string, write_error,
-    write_integer, write_null_bulk_string, write_redis_file, write_simple_string,
+    is_matched, propogate_slaves, write_array, write_bulk_string, write_error, write_integer,
+    write_null_bulk_string, write_redis_file, write_simple_string,
 };
 use std::net::TcpStream;
 use std::time::{SystemTime, UNIX_EPOCH};
