@@ -10,7 +10,7 @@ use codecrafters_redis::structs::global::RedisGlobal;
 use codecrafters_redis::structs::request::Request;
 use codecrafters_redis::structs::runner::Runner;
 use codecrafters_redis::types::{DbConfigType, DbType, RedisGlobalType};
-use codecrafters_redis::utils::{num_bytes, write_array};
+use codecrafters_redis::utils::write_array;
 use std::sync::{Arc, Mutex};
 
 fn main() {
@@ -65,7 +65,6 @@ pub fn spawn_replica_handler_thread(
                 thread::sleep(Duration::from_secs(1));
 
                 let mut global_guard = global_state.lock().unwrap();
-                println!("HI");
 
                 for (slave_port, replica_arc) in global_guard.replica_states.iter_mut() {
                     if let Ok(mut replica) = replica_arc.lock() {
@@ -162,6 +161,7 @@ pub fn spawn_replica_handler_thread(
                     &global_state,
                     &mut connection_info,
                     &local_offset,
+                    true,
                 );
 
                 local_offset += bytes_read;
@@ -246,6 +246,7 @@ fn handle_connection(
             &global_state,
             &mut connection_info,
             &0,
+            false,
         );
     }
 }

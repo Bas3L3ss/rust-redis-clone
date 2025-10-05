@@ -26,6 +26,7 @@ impl Runner {
         global_state: &RedisGlobalType,
         connection: &mut Connection,
         local_offset: &usize,
+        is_propagation: bool,
     ) {
         while self.cur_step < self.args.len() {
             self.step(
@@ -35,6 +36,7 @@ impl Runner {
                 global_state,
                 connection,
                 local_offset,
+                is_propagation,
             );
             self.cur_step += 1;
         }
@@ -48,6 +50,7 @@ impl Runner {
         global_state: &RedisGlobalType,
         connection: &mut Connection,
         local_offset: &usize,
+        is_propagation: bool,
     ) {
         if self.args.is_empty() {
             write_error(stream, "empty command");
@@ -62,19 +65,28 @@ impl Runner {
 
         match command.as_str() {
             "ping" => {
+                let global_is_master = {
+                    let global = global_state.lock().unwrap();
+                    global.is_master()
+                };
+                if is_propagation && !global_is_master {
+                    return;
+                }
                 self.handle_ping(stream);
             }
             "echo" => {
                 self.cur_step += self.handle_echo(stream, args);
             }
             "set" => {
-                self.cur_step += self.handle_set(stream, args, db, db_config, global_state);
+                self.cur_step +=
+                    self.handle_set(stream, args, db, db_config, global_state, is_propagation);
             }
             "get" => {
                 self.cur_step += self.handle_get(stream, args, db, db_config);
             }
             "del" => {
-                self.cur_step += self.handle_del(stream, args, db, db_config, global_state);
+                self.cur_step +=
+                    self.handle_del(stream, args, db, db_config, global_state, is_propagation);
             }
             "config" => {
                 self.cur_step += self.handle_config(stream, args, global_state);
@@ -357,9 +369,16 @@ impl Runner {
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
+        is_propagation: bool,
     ) -> usize {
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && is_propagation
+        };
         if args.len() < 2 {
-            write_error(stream, "wrong number of arguments for 'SET'");
+            if is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'SET'");
+            }
             return 0;
         }
         let mut consumed = 0;
@@ -388,12 +407,16 @@ impl Runner {
                             config.expire_at = Some(expire_at);
                             ex_arg = Some(sec_str.clone());
                         } else {
-                            write_error(stream, "invalid EX argument");
+                            if !is_slave_and_propagation {
+                                write_error(stream, "invalid EX argument");
+                            }
                             return 0;
                         }
                         idx += 2;
                     } else {
-                        write_error(stream, "missing EX argument");
+                        if !is_slave_and_propagation {
+                            write_error(stream, "missing EX argument");
+                        }
                         return 0;
                     }
                     consumed += 2;
@@ -409,12 +432,16 @@ impl Runner {
                             config.expire_at = Some(expire_at);
                             px_arg = Some(ms_str.clone());
                         } else {
-                            write_error(stream, "invalid PX argument");
+                            if !is_slave_and_propagation {
+                                write_error(stream, "invalid PX argument");
+                            }
                             return 0;
                         }
                         idx += 2;
                     } else {
-                        write_error(stream, "missing PX argument");
+                        if !is_slave_and_propagation {
+                            write_error(stream, "missing PX argument");
+                        }
                         return 0;
                     }
                     consumed += 2;
@@ -466,7 +493,9 @@ impl Runner {
         };
         propogate_slaves(global_state, &propagation);
 
-        write_simple_string(stream, "OK");
+        if !is_slave_and_propagation {
+            write_simple_string(stream, "OK");
+        }
         consumed
     }
 
@@ -477,11 +506,19 @@ impl Runner {
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
+        is_propagation: bool,
     ) -> usize {
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && is_propagation
+        };
         if args.is_empty() {
-            write_error(stream, "wrong number of arguments for 'DEL'");
+            if is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'DEL'");
+            }
             return 0;
         }
+
         let key = &args[0];
         let mut removed = 0;
         {
@@ -496,7 +533,9 @@ impl Runner {
                 &format!("*2\r\n$3\r\nDEL\r\n${}\r\n{}\r\n", key.len(), key),
             );
         }
-        write_integer(stream, removed);
+        if !is_slave_and_propagation {
+            write_integer(stream, removed);
+        }
         1
     }
 }
