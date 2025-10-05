@@ -59,7 +59,7 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
         thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_secs(1));
-                let ack_message = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n";
+                let ack_message = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
                 let bytes = num_bytes(ack_message);
 
                 let mut global_guard = global_state.lock().unwrap();
