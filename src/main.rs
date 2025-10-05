@@ -10,7 +10,7 @@ use codecrafters_redis::structs::global::RedisGlobal;
 use codecrafters_redis::structs::request::Request;
 use codecrafters_redis::structs::runner::Runner;
 use codecrafters_redis::types::{DbConfigType, DbType, RedisGlobalType};
-use codecrafters_redis::utils::num_bytes;
+use codecrafters_redis::utils::{num_bytes, write_array};
 use std::sync::{Arc, Mutex};
 
 fn main() {
@@ -59,18 +59,15 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
         thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_secs(1));
-                let ack_message = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
-                let bytes = num_bytes(ack_message);
 
                 let mut global_guard = global_state.lock().unwrap();
 
                 for (slave_port, replica_arc) in global_guard.replica_states.iter_mut() {
                     if let Ok(mut replica) = replica_arc.lock() {
-                        // Send the ACK message to the slave
-                        if let Err(e) = replica.stream.write_all(ack_message.as_bytes()) {
-                            eprintln!("Failed to send ACK to slave {}: {:?}", slave_port, e);
-                            continue;
-                        }
+                        write_array(
+                            &mut replica.stream,
+                            &[Some("REPLCONF"), Some("GETACK"), Some("*")],
+                        );
                         if let Err(e) = replica.stream.flush() {
                             eprintln!("Failed to flush ACK to slave {}: {:?}", slave_port, e);
                             continue;
@@ -112,7 +109,7 @@ pub fn spawn_client_thread(db: DbType, db_config: DbConfigType, global_state: Re
                         replica.stream.set_read_timeout(None).ok();
                     }
                 }
-                global_guard.offset_replica_sync += bytes;
+                global_guard.offset_replica_sync += 37;
             }
         });
     } else {
