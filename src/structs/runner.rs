@@ -63,6 +63,7 @@ impl Runner {
         let args = &self.args[self.cur_step + 1..];
 
         eprintln!("Received command: {:?}", command);
+        println!("hohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoho");
 
         match command.as_str() {
             "ping" => {
