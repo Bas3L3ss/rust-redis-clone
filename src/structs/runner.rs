@@ -146,14 +146,13 @@ impl Runner {
         let global = global_state.lock().unwrap();
         let connected_replicas = global.replica_states.len();
 
-        // In a real implementation, would wait for ACKs or replication offset
         let satisfied = if connected_replicas >= numreplicas {
             numreplicas
         } else {
             connected_replicas
         };
 
-        write_integer(stream, 0);
+        write_integer(stream, satisfied as i64);
         2
     }
 
