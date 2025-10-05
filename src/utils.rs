@@ -212,6 +212,7 @@ pub fn sync_with_master(
     let ping_cmd = b"*1\r\n$4\r\nPING\r\n";
     stream.write_all(ping_cmd).unwrap();
     stream.flush().unwrap();
+    println!("hohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoho");
 
     {
         let mut resp = [0u8; 1024];
