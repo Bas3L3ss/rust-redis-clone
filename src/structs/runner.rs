@@ -146,13 +146,7 @@ impl Runner {
         let global = global_state.lock().unwrap();
         let connected_replicas = global.replica_states.len();
 
-        let satisfied = if connected_replicas >= numreplicas {
-            numreplicas
-        } else {
-            connected_replicas
-        };
-
-        write_integer(stream, satisfied as i64);
+        write_integer(stream, connected_replicas as i64);
         2
     }
 
