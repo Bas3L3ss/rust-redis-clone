@@ -65,6 +65,7 @@ pub fn spawn_replica_handler_thread(
                 thread::sleep(Duration::from_secs(1));
 
                 let mut global_guard = global_state.lock().unwrap();
+                println!("HI");
 
                 for (slave_port, replica_arc) in global_guard.replica_states.iter_mut() {
                     if let Ok(mut replica) = replica_arc.lock() {
@@ -78,7 +79,6 @@ pub fn spawn_replica_handler_thread(
                             continue;
                         }
 
-                        println!("HI");
                         let mut buf = [0u8; 1024];
                         replica
                             .stream
