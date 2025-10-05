@@ -5,6 +5,8 @@ use std::net::TcpStream;
 use crate::types::RedisGlobalType;
 
 pub fn write_simple_string(stream: &mut TcpStream, msg: &str) {
+    print!("RESP IS SIMPLE STRING");
+
     let _ = stream.write_all(format!("+{}\r\n", msg).as_bytes());
 }
 
@@ -13,6 +15,8 @@ pub fn write_error(stream: &mut TcpStream, msg: &str) {
 }
 
 pub fn write_bulk_string(stream: &mut TcpStream, msg: &str) {
+    print!("RESP IS BULK STRING");
+
     let resp = format!("${}\r\n{}\r\n", msg.len(), msg);
     let _ = stream.write_all(resp.as_bytes());
 }
@@ -67,6 +71,7 @@ pub fn write_redis_file(stream: &mut TcpStream, file_name: &str) {
 }
 
 pub fn write_array<T: AsRef<str>>(stream: &mut TcpStream, items: &[Option<T>]) {
+    print!("RESP IS ARRAY");
     let _ = stream.write_all(format!("*{}\r\n", items.len()).as_bytes());
     for item in items {
         match item {
