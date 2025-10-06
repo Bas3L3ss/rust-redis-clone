@@ -5,8 +5,6 @@ use std::net::TcpStream;
 use crate::types::RedisGlobalType;
 
 pub fn write_simple_string(stream: &mut TcpStream, msg: &str) {
-    print!("RESP IS SIMPLE STRING");
-
     let _ = stream.write_all(format!("+{}\r\n", msg).as_bytes());
 }
 
@@ -15,8 +13,6 @@ pub fn write_error(stream: &mut TcpStream, msg: &str) {
 }
 
 pub fn write_bulk_string(stream: &mut TcpStream, msg: &str) {
-    print!("RESP IS BULK STRING");
-
     let resp = format!("${}\r\n{}\r\n", msg.len(), msg);
     let _ = stream.write_all(resp.as_bytes());
 }
@@ -28,6 +24,21 @@ pub fn write_null_bulk_string(stream: &mut TcpStream) {
 pub fn write_integer(stream: &mut TcpStream, val: i64) {
     let resp = format!(":{}\r\n", val);
     let _ = stream.write_all(resp.as_bytes());
+}
+
+pub fn write_array<T: AsRef<str>>(stream: &mut TcpStream, items: &[Option<T>]) {
+    let _ = stream.write_all(format!("*{}\r\n", items.len()).as_bytes());
+    for item in items {
+        match item {
+            Some(val) => {
+                let s = val.as_ref();
+                let _ = stream.write_all(format!("${}\r\n{}\r\n", s.len(), s).as_bytes());
+            }
+            None => {
+                let _ = stream.write_all(b"$-1\r\n");
+            }
+        }
+    }
 }
 
 pub fn write_redis_file(stream: &mut TcpStream, file_name: &str) {
@@ -68,22 +79,6 @@ pub fn write_redis_file(stream: &mut TcpStream, file_name: &str) {
     let mut resp = format!("${}\r\n", file_len).into_bytes();
     resp.extend_from_slice(&content);
     let _ = stream.write_all(&resp);
-}
-
-pub fn write_array<T: AsRef<str>>(stream: &mut TcpStream, items: &[Option<T>]) {
-    print!("RESP IS ARRAY");
-    let _ = stream.write_all(format!("*{}\r\n", items.len()).as_bytes());
-    for item in items {
-        match item {
-            Some(val) => {
-                let s = val.as_ref();
-                let _ = stream.write_all(format!("${}\r\n{}\r\n", s.len(), s).as_bytes());
-            }
-            None => {
-                let _ = stream.write_all(b"$-1\r\n");
-            }
-        }
-    }
 }
 
 pub fn is_matched(pattern: &str, word: &str) -> bool {

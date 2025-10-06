@@ -61,6 +61,7 @@ pub fn spawn_replica_handler_thread(
 
     if is_master {
         thread::spawn(move || {
+            thread::sleep(Duration::from_secs(5));
             loop {
                 thread::sleep(Duration::from_secs(1));
 
@@ -86,27 +87,40 @@ pub fn spawn_replica_handler_thread(
                         continue;
                     }
 
-                    let mut buf = [0u8; 1024];
                     stream_guard
                         .set_read_timeout(Some(Duration::from_millis(100)))
                         .ok();
+                    let mut buf = [0u8; 1024];
                     match stream_guard.read(&mut buf) {
                         Ok(n) if n > 0 => {
-                            let req = Request::new_from_buffer(&buf[..n]);
-                            if req.args.len() >= 3
-                                && req.args[0].eq_ignore_ascii_case("REPLCONF")
-                                && req.args[1].eq_ignore_ascii_case("ACK")
-                            {
-                                if let Ok(replica_offset) = req.args[2].parse::<i64>() {
-                                    let diff = master_offset - replica_offset;
-                                    if diff != 0 {
-                                        eprintln!("replica is behind the master by {}", diff);
+                            let mut offset = 0;
+                            while offset < n {
+                                match Request::try_parse(&buf[offset..n]) {
+                                    Some((req, consumed)) => {
+                                        if req.args.len() >= 3
+                                            && req.args[0].eq_ignore_ascii_case("REPLCONF")
+                                            && req.args[1].eq_ignore_ascii_case("ACK")
+                                        {
+                                            if let Ok(replica_offset) = req.args[2].parse::<i64>() {
+                                                let diff = master_offset - replica_offset;
+                                                if diff != 0 {
+                                                    eprintln!(
+                                                        "replica is behind the master by {}",
+                                                        diff
+                                                    );
+                                                }
+                                                replica.local_offset = replica_offset as usize;
+                                            }
+                                        }
+                                        offset += consumed;
                                     }
-                                    replica.local_offset = replica_offset as usize;
+                                    None => {
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        Ok(_) => {} // No data
+                        Ok(_) => {}
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                         Err(e) => {
                             eprintln!("Error reading response from slave {}: {:?}", slave_port, e);
@@ -133,39 +147,43 @@ pub fn spawn_replica_handler_thread(
 
             let mut connection_info = Connection::default();
             let mut local_offset = 0;
-            loop {
-                let mut buffer = [0u8; 1024];
+            let mut read_buffer: Vec<u8> = Vec::new();
 
+            loop {
+                let mut temp = [0u8; 1024];
                 let mut stream_guard = master_stream_arc.lock().unwrap();
-                let bytes_read = {
-                    match stream_guard.read(&mut buffer) {
-                        Ok(0) => {
-                            eprintln!("Master closed connection");
-                            break;
-                        }
-                        Ok(n) => n,
-                        Err(e) => {
-                            eprintln!("Read error from master: {e}");
-                            break;
-                        }
+                let bytes_read = match stream_guard.read(&mut temp) {
+                    Ok(0) => {
+                        eprintln!("Master closed connection");
+                        break;
+                    }
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("Read error from master: {e}");
+                        break;
                     }
                 };
 
-                let request = Request::new_from_buffer(&buffer[..bytes_read]);
+                read_buffer.extend_from_slice(&temp[..bytes_read]);
 
-                let mut runner = Runner::new(request.args);
+                // Try to parse as many complete requests as possible
+                while let Some((request, consumed)) = Request::try_parse(&read_buffer) {
+                    local_offset += consumed; // ✅ advance offset only for what we parsed
 
-                runner.run(
-                    &mut stream_guard,
-                    &db,
-                    &db_config,
-                    &global_state,
-                    &mut connection_info,
-                    &local_offset,
-                    true,
-                );
+                    let mut runner = Runner::new(request.args);
+                    runner.run(
+                        &mut stream_guard,
+                        &db,
+                        &db_config,
+                        &global_state,
+                        &mut connection_info,
+                        &local_offset,
+                        true,
+                    );
 
-                local_offset += bytes_read;
+                    // Remove the bytes we consumed from the buffer
+                    read_buffer.drain(..consumed);
+                }
             }
 
             eprintln!("Replication thread exiting; consider retrying sync with master");
@@ -227,27 +245,42 @@ fn handle_connection(
     global_state: RedisGlobalType,
 ) {
     let mut connection_info = Connection::default();
+    let mut local_offset = 0;
+    let mut read_buffer: Vec<u8> = Vec::new();
+
     loop {
-        let mut buffer = [0u8; 1024];
-        let bytes_read = match stream.read(&mut buffer) {
+        if connection_info.is_slave_established {
+            break;
+        }
+        let mut temp = [0u8; 1024];
+        let bytes_read = match stream.read(&mut temp) {
             Ok(0) => break,
             Ok(n) => n,
             Err(e) => {
-                eprintln!("read error: {e}");
+                eprintln!("read error from api handler: {e}");
                 break;
             }
         };
 
-        let request = Request::new_from_buffer(&buffer[..bytes_read]);
-        let mut runner = Runner::new(request.args);
-        runner.run(
-            &mut stream,
-            &db,
-            &db_config,
-            &global_state,
-            &mut connection_info,
-            &0,
-            false,
-        );
+        read_buffer.extend_from_slice(&temp[..bytes_read]);
+
+        // Try to parse as many complete requests as possible
+        while let Some((request, consumed)) = Request::try_parse(&read_buffer) {
+            local_offset += consumed;
+
+            let mut runner = Runner::new(request.args);
+            runner.run(
+                &mut stream,
+                &db,
+                &db_config,
+                &global_state,
+                &mut connection_info,
+                &local_offset,
+                false,
+            );
+
+            // Remove the bytes we consumed from the buffer
+            read_buffer.drain(..consumed);
+        }
     }
 }

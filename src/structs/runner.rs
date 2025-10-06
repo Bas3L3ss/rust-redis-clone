@@ -63,7 +63,6 @@ impl Runner {
         let args = &self.args[self.cur_step + 1..];
 
         eprintln!("Received command: {:?}", command);
-
         match command.as_str() {
             "ping" => {
                 let global_is_master = {
@@ -80,14 +79,14 @@ impl Runner {
             }
             "set" => {
                 self.cur_step +=
-                    self.handle_set(stream, args, db, db_config, global_state, is_propagation);
+                    self.handle_set(stream, args, db, db_config, global_state, &is_propagation);
             }
             "get" => {
                 self.cur_step += self.handle_get(stream, args, db, db_config);
             }
             "del" => {
                 self.cur_step +=
-                    self.handle_del(stream, args, db, db_config, global_state, is_propagation);
+                    self.handle_del(stream, args, db, db_config, global_state, &is_propagation);
             }
             "config" => {
                 self.cur_step += self.handle_config(stream, args, global_state);
@@ -191,7 +190,7 @@ impl Runner {
         global_state: &RedisGlobalType,
         connection: &mut Connection,
     ) -> usize {
-        let global = global_state.lock().unwrap();
+        let mut global = global_state.lock().unwrap();
         if args.len() >= 2 {
             write_simple_string(
                 stream,
@@ -201,14 +200,15 @@ impl Runner {
                 ),
             );
 
-            write_redis_file(
-                stream,
-                &format!("{}/{}", global.dir_path, global.dbfilename),
-            );
-
             let stream_clone = stream.try_clone().unwrap();
             if let Some(ref slave_port) = connection.slave_port {
-                add_replica(global_state, stream_clone, slave_port)
+                add_replica(&mut global, stream_clone, slave_port);
+
+                write_redis_file(
+                    stream,
+                    &format!("{}/{}", global.dir_path, global.dbfilename),
+                );
+                connection.is_slave_established = true;
             }
             return 2;
         }
@@ -262,19 +262,15 @@ impl Runner {
                 }
 
                 "getack" => {
-                    if args.len() >= 2 {
-                        write_array(
-                            stream,
-                            &[
-                                Some("REPLCONF"),
-                                Some("ACK"),
-                                Some(&local_offset.to_string()),
-                            ],
-                        );
-                        return 2;
-                    }
-
-                    return 1;
+                    write_array(
+                        stream,
+                        &[
+                            Some("REPLCONF"),
+                            Some("ACK"),
+                            Some(&local_offset.to_string()),
+                        ],
+                    );
+                    return 2;
                 }
                 _ => return 0,
             }
@@ -357,8 +353,6 @@ impl Runner {
     }
 
     fn handle_ping(&self, stream: &mut TcpStream) {
-        println!("hohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohohoho");
-
         write_simple_string(stream, "PONG");
     }
 
@@ -445,11 +439,11 @@ impl Runner {
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
-        is_propagation: bool,
+        is_propagation: &bool,
     ) -> usize {
         let is_slave_and_propagation = {
             let global = global_state.lock().unwrap();
-            !global.is_master() && is_propagation
+            !global.is_master() && *is_propagation
         };
         if args.len() < 2 {
             if is_slave_and_propagation {
@@ -582,11 +576,11 @@ impl Runner {
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
-        is_propagation: bool,
+        is_propagation: &bool,
     ) -> usize {
         let is_slave_and_propagation = {
             let global = global_state.lock().unwrap();
-            !global.is_master() && is_propagation
+            !global.is_master() && *is_propagation
         };
         if args.is_empty() {
             if is_slave_and_propagation {
