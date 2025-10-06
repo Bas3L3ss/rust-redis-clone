@@ -62,7 +62,7 @@ pub fn spawn_replica_handler_thread(
     if is_master {
         thread::spawn(move || {
             loop {
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(Duration::from_secs(1));
                 println!("Start sending heartbeat");
                 let mut global_guard = global_state.lock().unwrap();
                 let master_offset = global_guard.offset_replica_sync as i64;
