@@ -63,7 +63,12 @@ pub fn spawn_replica_handler_thread(
         thread::spawn(move || loop {
             thread::sleep(Duration::from_secs(1));
             println!("### Start sending heartbeat");
-            println!("{global_state:#?}");
+
+            match global_state.try_lock() {
+                Ok(guard) => println!("Lock acquired! value = {:#?}", *guard),
+                Err(_) => println!("Lock is already held by another thread."),
+            }
+
             let mut global_guard: std::sync::MutexGuard<'_, RedisGlobal> =
                 global_state.lock().unwrap();
             let master_offset = global_guard.offset_replica_sync as i64;
