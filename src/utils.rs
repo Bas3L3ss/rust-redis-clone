@@ -295,12 +295,20 @@ pub fn write_to_file(filename: &str, contents: Vec<u8>) -> std::io::Result<()> {
 pub fn propagate_slaves(global_state: &RedisGlobalType, message: &str) {
     let msg = message.to_string();
 
-    let mut global_guard = global_state.lock().unwrap();
-    global_guard.offset_replica_sync += num_bytes(&msg);
+    // First, collect the senders while holding the lock, then drop the lock before sending.
+    let senders: Vec<_> = {
+        let mut global_guard = global_state.lock().unwrap();
+        global_guard.offset_replica_sync += num_bytes(&msg);
+        global_guard
+            .replica_states
+            .values()
+            .map(|replica| replica.sender.clone())
+            .collect()
+    };
 
-    for replica in global_guard.replica_states.values() {
+    for sender in senders {
         // Send message to replica’s channel
-        if let Err(e) = replica.sender.send(msg.clone()) {
+        if let Err(e) = sender.send(msg.clone()) {
             eprintln!("Failed to queue message for replica: {:?}", e);
         }
     }
