@@ -160,27 +160,26 @@ impl Runner {
         };
 
         write_integer(stream, satisfied as i64);
-        2
-        // loop {
-        //     {
-        //         let guard = global_state.lock().unwrap();
-        //         let acks = guard
-        //             .replica_states
-        //             .values()
-        //             .filter(|replica| replica.local_offset == offset)
-        //             .count();
+        loop {
+            {
+                let guard = global_state.lock().unwrap();
+                let acks = guard
+                    .replica_states
+                    .values()
+                    .filter(|replica| replica.local_offset == offset)
+                    .count();
 
-        //         if acks >= satisfied {
-        //             return 2;
-        //         }
+                if acks >= satisfied {
+                    return 2;
+                }
 
-        //         if Instant::now() >= deadline {
-        //             return 2;
-        //         }
-        //     }
+                if Instant::now() >= deadline {
+                    return 2;
+                }
+            }
 
-        //     std::thread::sleep(Duration::from_millis(10));
-        // }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     pub fn handle_psync(

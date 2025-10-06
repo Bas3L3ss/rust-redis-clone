@@ -61,7 +61,6 @@ pub fn spawn_replica_handler_thread(
 
     if is_master {
         thread::spawn(move || {
-            thread::sleep(Duration::from_secs(5));
             loop {
                 thread::sleep(Duration::from_secs(1));
 
