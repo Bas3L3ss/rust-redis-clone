@@ -64,9 +64,8 @@ pub fn spawn_replica_handler_thread(
             thread::sleep(Duration::from_secs(1));
             println!("### Start sending heartbeat");
             let mut global_guard = global_state.lock().unwrap();
+            println!("{:#?},hiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii", global_guard.replica_states);
             let master_offset = global_guard.offset_replica_sync as i64;
-
-            println!("{:#?}", global_guard.replica_states);
 
             for (slave_port, replica) in global_guard.replica_states.iter_mut() {
                 let mut stream_guard = match replica.stream.lock() {
