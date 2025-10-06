@@ -159,6 +159,7 @@ impl Runner {
             guard.offset_replica_sync
         };
 
+        write_integer(stream, satisfied as i64);
         loop {
             {
                 let guard = global_state.lock().unwrap();
@@ -169,12 +170,10 @@ impl Runner {
                     .count();
 
                 if acks >= satisfied {
-                    write_integer(stream, satisfied as i64);
                     return 2;
                 }
 
                 if Instant::now() >= deadline {
-                    write_integer(stream, satisfied as i64);
                     return 2;
                 }
             }
