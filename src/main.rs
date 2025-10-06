@@ -62,7 +62,6 @@ pub fn spawn_replica_handler_thread(
     if is_master {
         thread::spawn(move || loop {
             thread::sleep(Duration::from_secs(1));
-            println!("ho");
 
             match global_state.try_lock() {
                 Ok(guard) => println!("Lock acquired! value = {:#?}", *guard),
