@@ -87,7 +87,7 @@ pub fn spawn_replica_handler_thread(
                     }
 
                     stream_guard
-                        .set_read_timeout(Some(Duration::from_millis(100)))
+                        .set_read_timeout(Some(Duration::from_millis(1000)))
                         .ok();
                     let mut buf = [0u8; 1024];
                     match stream_guard.read(&mut buf) {
