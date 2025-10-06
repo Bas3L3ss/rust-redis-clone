@@ -62,7 +62,7 @@ pub fn spawn_replica_handler_thread(
     if is_master {
         thread::spawn(move || {
             loop {
-                thread::sleep(Duration::from_secs(1));
+                thread::sleep(Duration::from_millis(10));
 
                 let mut global_guard = global_state.lock().unwrap();
                 let master_offset = global_guard.offset_replica_sync as i64;
@@ -87,7 +87,7 @@ pub fn spawn_replica_handler_thread(
                     }
 
                     stream_guard
-                        .set_read_timeout(Some(Duration::from_millis(1000)))
+                        .set_read_timeout(Some(Duration::from_millis(100)))
                         .ok();
                     let mut buf = [0u8; 1024];
                     match stream_guard.read(&mut buf) {
