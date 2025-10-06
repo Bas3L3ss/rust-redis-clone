@@ -202,7 +202,6 @@ impl Runner {
             let stream_clone = stream.try_clone().unwrap();
             if let Some(ref slave_port) = connection.slave_port {
                 add_replica(&mut global, stream_clone, slave_port);
-
                 write_redis_file(
                     stream,
                     &format!("{}/{}", global.dir_path, global.dbfilename),

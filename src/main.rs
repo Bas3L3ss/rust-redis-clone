@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
@@ -63,9 +63,11 @@ pub fn spawn_replica_handler_thread(
         thread::spawn(move || loop {
             thread::sleep(Duration::from_secs(1));
             println!("### Start sending heartbeat");
-            let mut global_guard = global_state.lock().unwrap();
-            println!("{:#?},hiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii", global_guard.replica_states);
+            let mut global_guard: std::sync::MutexGuard<'_, RedisGlobal> =
+                global_state.lock().unwrap();
             let master_offset = global_guard.offset_replica_sync as i64;
+
+            println!("{global_guard:#?}");
 
             for (slave_port, replica) in global_guard.replica_states.iter_mut() {
                 let mut stream_guard = match replica.stream.lock() {
@@ -118,7 +120,9 @@ pub fn spawn_replica_handler_thread(
                     }
                 }
             }
-            global_guard.offset_replica_sync += 37;
+            if !global_guard.replica_states.is_empty() {
+                global_guard.offset_replica_sync += 37;
+            }
         });
     } else {
         thread::spawn(move || {
