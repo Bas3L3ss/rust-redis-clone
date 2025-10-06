@@ -60,77 +60,65 @@ pub fn spawn_replica_handler_thread(
     };
 
     if is_master {
-        thread::spawn(move || {
-            loop {
-                thread::sleep(Duration::from_secs(1));
-                println!("### Start sending heartbeat");
-                let mut global_guard = global_state.lock().unwrap();
-                let master_offset = global_guard.offset_replica_sync as i64;
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(1));
+            println!("### Start sending heartbeat");
+            let mut global_guard = global_state.lock().unwrap();
+            let master_offset = global_guard.offset_replica_sync as i64;
 
-                for (slave_port, replica) in global_guard.replica_states.iter_mut() {
-                    let mut stream_guard = match replica.stream.lock() {
-                        Ok(guard) => guard,
-                        Err(_) => {
-                            eprintln!("Failed to lock stream for replica {}", slave_port);
-                            continue;
-                        }
-                    };
-
-                    println!("Start sending heartbeat to replica with port: {slave_port}");
-                    write_array(
-                        &mut *stream_guard,
-                        &[Some("REPLCONF"), Some("GETACK"), Some("*")],
-                    );
-
-                    if let Err(e) = stream_guard.flush() {
-                        eprintln!("Failed to flush ACK to slave {}: {:?}", slave_port, e);
+            for (slave_port, replica) in global_guard.replica_states.iter_mut() {
+                let mut stream_guard = match replica.stream.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => {
+                        eprintln!("Failed to lock stream for replica {}", slave_port);
                         continue;
                     }
+                };
 
-                    stream_guard
-                        .set_read_timeout(Some(Duration::from_millis(100)))
-                        .ok();
-                    let mut buf = [0u8; 1024];
-                    match stream_guard.read(&mut buf) {
-                        Ok(n) if n > 0 => {
-                            let mut offset = 0;
-                            while offset < n {
-                                match Request::try_parse(&buf[offset..n]) {
-                                    Some((req, consumed)) => {
-                                        if req.args.len() >= 3
-                                            && req.args[0].eq_ignore_ascii_case("REPLCONF")
-                                            && req.args[1].eq_ignore_ascii_case("ACK")
-                                        {
-                                            if let Ok(replica_offset) = req.args[2].parse::<i64>() {
-                                                let diff = master_offset - replica_offset;
-                                                if diff != 0 {
-                                                    eprintln!(
-                                                        "replica is behind the master by {}",
-                                                        diff
-                                                    );
-                                                }
-                                                replica.local_offset = replica_offset as usize;
+                println!("Start sending heartbeat to replica with port: {slave_port}");
+                write_array(
+                    &mut *stream_guard,
+                    &[Some("REPLCONF"), Some("GETACK"), Some("*")],
+                );
+
+                let mut buf = [0u8; 1024];
+                match stream_guard.read(&mut buf) {
+                    Ok(n) if n > 0 => {
+                        let mut offset = 0;
+                        while offset < n {
+                            match Request::try_parse(&buf[offset..n]) {
+                                Some((req, consumed)) => {
+                                    if req.args.len() >= 3
+                                        && req.args[0].eq_ignore_ascii_case("REPLCONF")
+                                        && req.args[1].eq_ignore_ascii_case("ACK")
+                                    {
+                                        if let Ok(replica_offset) = req.args[2].parse::<i64>() {
+                                            let diff = master_offset - replica_offset;
+                                            if diff != 0 {
+                                                eprintln!(
+                                                    "replica is behind the master by {}",
+                                                    diff
+                                                );
                                             }
+                                            replica.local_offset = replica_offset as usize;
                                         }
-                                        offset += consumed;
                                     }
-                                    None => {
-                                        break;
-                                    }
+                                    offset += consumed;
+                                }
+                                None => {
+                                    break;
                                 }
                             }
                         }
-                        Ok(_) => {}
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                        Err(e) => {
-                            eprintln!("Error reading response from slave {}: {:?}", slave_port, e);
-                        }
                     }
-                    // Remove the timeout for future use
-                    stream_guard.set_read_timeout(None).ok();
+                    Ok(_) => {}
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) => {
+                        eprintln!("Error reading response from slave {}: {:?}", slave_port, e);
+                    }
                 }
-                global_guard.offset_replica_sync += 37;
             }
+            global_guard.offset_replica_sync += 37;
         });
     } else {
         thread::spawn(move || {
