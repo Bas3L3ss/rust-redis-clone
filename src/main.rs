@@ -272,7 +272,6 @@ fn handle_connection(
 
     loop {
         if connection_info.is_slave_established {
-            println!("{stream:#?}");
             break;
         }
         let mut temp = [0u8; 1024];
