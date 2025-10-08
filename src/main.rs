@@ -139,6 +139,7 @@ pub fn spawn_replica_handler_thread(
                         eprintln!("Error reading response from slave {}: {:?}", slave_port, e);
                     }
                 }
+                println!("sent heartbeat to {slave_port}");
             }
 
             {
