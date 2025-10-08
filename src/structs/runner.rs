@@ -136,7 +136,7 @@ impl Runner {
 
             "command" | "docs" => {
                 if connection.transaction.is_txing {
-                    write_simple_string(stream, "Queued");
+                    write_simple_string(stream, "QUEUED");
                 }
                 write_simple_string(stream, "OK");
             }
@@ -360,7 +360,7 @@ impl Runner {
         // If in transaction, queue the command and return
         if connection.transaction.is_txing {
             connection.transaction.tasks.push("info".to_string());
-            write_simple_string(stream, "Queued");
+            write_simple_string(stream, "QUEUED");
             return;
         }
 
@@ -401,7 +401,7 @@ impl Runner {
             } else {
                 connection.transaction.tasks.push("keys".to_string());
             }
-            write_simple_string(stream, "Queued");
+            write_simple_string(stream, "QUEUED");
             if args.len() == 1 {
                 1
             } else {
@@ -448,7 +448,7 @@ impl Runner {
     fn handle_ping(&self, stream: &mut TcpStream, connection: &mut Connection) {
         if connection.transaction.is_txing {
             connection.transaction.tasks.push(String::from("Ping"));
-            write_simple_string(stream, "Queued");
+            write_simple_string(stream, "QUEUED");
 
             return;
         }
@@ -464,7 +464,7 @@ impl Runner {
         if let Some(msg) = args.get(0) {
             if connection.transaction.is_txing {
                 connection.transaction.tasks.push(format!("echo {msg}"));
-                write_simple_string(stream, "Queued");
+                write_simple_string(stream, "QUEUED");
                 return 1;
             }
             write_simple_string(stream, msg);
@@ -472,7 +472,7 @@ impl Runner {
         } else {
             if connection.transaction.is_txing {
                 connection.transaction.tasks.push(format!("echo"));
-                write_simple_string(stream, "Queued");
+                write_simple_string(stream, "QUEUED");
                 return 0;
             }
             write_simple_string(stream, "");
@@ -617,7 +617,7 @@ impl Runner {
                 }
             }
             connection.transaction.tasks.push(task);
-            write_simple_string(stream, "Queued");
+            write_simple_string(stream, "QUEUED");
             return consumed;
         }
 
