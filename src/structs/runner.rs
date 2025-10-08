@@ -6,6 +6,7 @@ use crate::utils::{
     is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
     write_null_bulk_string, write_redis_file, write_simple_string,
 };
+use std::io::Write;
 use std::net::TcpStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -111,11 +112,28 @@ impl Runner {
             "wait" => {
                 self.cur_step += self.handle_wait(stream, args, global_state, connection);
             }
+            "multi" => {
+                self.handle_multi(stream, args, global_state, connection);
+            }
+
+            "command" | "docs" => {
+                write_simple_string(stream, "OK");
+            }
 
             _ => {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_multi(
+        &self,
+        stream: &mut TcpStream,
+        _args: &[String],
+        _global_state: &RedisGlobalType,
+        _connection: &mut Connection,
+    ) {
+        write_simple_string(stream, "OK");
     }
 
     pub fn handle_wait(
@@ -361,7 +379,7 @@ impl Runner {
 
     fn handle_echo(&self, stream: &mut TcpStream, args: &[String]) -> usize {
         if let Some(msg) = args.get(0) {
-            write_simple_string(stream, msg);
+            write_simple_string(stream, &format!("\"{msg}\""));
             1
         } else {
             write_simple_string(stream, "");
