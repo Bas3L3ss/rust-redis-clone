@@ -68,12 +68,26 @@ pub fn spawn_replica_handler_thread(
                 Err(_) => println!("Lock is already held by another thread."),
             }
 
-            let mut global_guard: std::sync::MutexGuard<'_, RedisGlobal> =
-                global_state.lock().unwrap();
-            let master_offset = global_guard.offset_replica_sync as i64;
+            let (master_offset, replica_states_keys): (i64, Vec<String>) = {
+                let global_guard = global_state.lock().unwrap();
+                (
+                    global_guard.offset_replica_sync as i64,
+                    global_guard.replica_states.keys().cloned().collect(),
+                )
+            };
 
-            for (slave_port, replica) in global_guard.replica_states.iter_mut() {
-                let mut stream_guard = match replica.stream.lock() {
+            let mut local_offset_updates: Vec<(String, usize)> = Vec::new();
+
+            for slave_port in &replica_states_keys {
+                let replica_state_arc = {
+                    let global_guard = global_state.lock().unwrap();
+                    match global_guard.replica_states.get(slave_port) {
+                        Some(replica) => replica.stream.clone(),
+                        None => continue,
+                    }
+                };
+
+                let mut stream_guard = match replica_state_arc.lock() {
                     Ok(guard) => guard,
                     Err(_) => {
                         eprintln!("Failed to lock stream for replica {}", slave_port);
@@ -105,7 +119,10 @@ pub fn spawn_replica_handler_thread(
                                                     diff
                                                 );
                                             }
-                                            replica.local_offset = replica_offset as usize;
+                                            local_offset_updates.push((
+                                                slave_port.clone(),
+                                                replica_offset as usize,
+                                            ));
                                         }
                                     }
                                     offset += consumed;
@@ -123,8 +140,17 @@ pub fn spawn_replica_handler_thread(
                     }
                 }
             }
-            if !global_guard.replica_states.is_empty() {
-                global_guard.offset_replica_sync += 37;
+
+            {
+                let mut global_guard = global_state.lock().unwrap();
+                for (slave_port, new_offset) in local_offset_updates {
+                    if let Some(replica) = global_guard.replica_states.get_mut(&slave_port) {
+                        replica.local_offset = new_offset;
+                    }
+                }
+                if !global_guard.replica_states.is_empty() {
+                    global_guard.offset_replica_sync += 37;
+                }
             }
         });
     } else {
