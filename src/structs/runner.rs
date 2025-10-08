@@ -635,12 +635,15 @@ impl Runner {
 
         let key = &args[0];
         let mut added = 0;
+
         {
             let mut map = db.lock().unwrap();
             let mut config_map = db_config.lock().unwrap();
+
             if !config_map.contains_key(key) || !map.contains_key(key) {
-                write_error(stream, &format!("key {key} is not in the database"));
-                return 1;
+                map.insert(key.clone(), "1".to_string());
+                config_map.insert(key.clone(), Default::default());
+                added = 1;
             }
             if let Some(cfg) = config_map.get(key) {
                 if cfg.is_expired() {
