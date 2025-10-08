@@ -142,9 +142,10 @@ impl Runner {
             }
         };
 
-        // For simplicity, just count the number of connected replicas
-        let global = global_state.lock().unwrap();
-        let connected_replicas = global.replica_states.len();
+        let connected_replicas = {
+            let global = global_state.lock().unwrap();
+            global.replica_states.len()
+        };
 
         let satisfied = if connected_replicas >= numreplicas {
             numreplicas
