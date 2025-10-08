@@ -3,8 +3,8 @@ use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, propagate_slaves, update_replica_offsets, write_array, write_bulk_string,
-    write_error, write_integer, write_null_bulk_string, write_redis_file, write_simple_string,
+    is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
+    write_null_bulk_string, write_redis_file, write_simple_string,
 };
 use std::net::TcpStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -85,6 +85,10 @@ impl Runner {
                 self.cur_step += self.handle_get(stream, args, db, db_config);
             }
             "del" => {
+                self.cur_step +=
+                    self.handle_del(stream, args, db, db_config, global_state, &is_propagation);
+            }
+            "incr" => {
                 self.cur_step +=
                     self.handle_del(stream, args, db, db_config, global_state, &is_propagation);
             }
@@ -604,6 +608,66 @@ impl Runner {
         propagate_slaves(
             global_state,
             &format!("*2\r\n$3\r\nDEL\r\n${}\r\n{}\r\n", key.len(), key),
+        );
+        1
+    }
+
+    fn handle_incr(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        db_config: &DbConfigType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+    ) -> usize {
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+
+        if args.is_empty() {
+            if is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'INCR'");
+            }
+            return 0;
+        }
+
+        let key = &args[0];
+        let mut added = 0;
+        {
+            let mut map = db.lock().unwrap();
+            let mut config_map = db_config.lock().unwrap();
+            if !config_map.contains_key(key) || !map.contains_key(key) {
+                write_error(stream, &format!("key {key} is not in the database"));
+                return 1;
+            }
+            if let Some(cfg) = config_map.get(key) {
+                if cfg.is_expired() {
+                    map.remove(key);
+                    config_map.remove(key);
+                    write_error(stream, &format!("key {key} is expired"));
+                    return 1;
+                }
+            }
+            let value = map.get(key).unwrap();
+            let parsed = value.parse::<i64>();
+            let new_value = match parsed {
+                Ok(val) => val + 1,
+                Err(_) => {
+                    write_error(stream, "value is not an integer or out of range");
+                    return 1;
+                }
+            };
+            map.insert(key.clone(), new_value.to_string());
+            added = new_value;
+        }
+        if !is_slave_and_propagation {
+            write_integer(stream, added);
+        }
+        propagate_slaves(
+            global_state,
+            &format!("*2\r\n$3\r\nIncr\r\n${}\r\n{}\r\n", key.len(), key),
         );
         1
     }

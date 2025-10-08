@@ -299,6 +299,9 @@ pub fn propagate_slaves(global_state: &RedisGlobalType, message: &str) {
     // First, collect the senders while holding the lock, then drop the lock before sending.
     let senders: Vec<_> = {
         let mut global_guard = global_state.lock().unwrap();
+        if !global_guard.is_master() {
+            return;
+        }
         global_guard.offset_replica_sync += num_bytes(&msg);
         global_guard
             .replica_states
