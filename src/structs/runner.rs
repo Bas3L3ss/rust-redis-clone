@@ -63,43 +63,58 @@ impl Runner {
         let args = &self.args[self.cur_step + 1..];
 
         eprintln!("Received command: {:?}", command);
+
         match command.as_str() {
             "ping" => {
-                let global_is_master = {
-                    let global = global_state.lock().unwrap();
-                    global.is_master()
-                };
-                if is_propagation && !global_is_master {
-                    return;
-                }
-                self.handle_ping(stream);
+                self.handle_ping(stream, connection);
             }
             "echo" => {
-                self.cur_step += self.handle_echo(stream, args);
+                self.cur_step += self.handle_echo(stream, args, connection);
             }
             "set" => {
-                self.cur_step +=
-                    self.handle_set(stream, args, db, db_config, global_state, &is_propagation);
+                self.cur_step += self.handle_set(
+                    stream,
+                    args,
+                    db,
+                    db_config,
+                    global_state,
+                    &is_propagation,
+                    connection,
+                );
             }
             "get" => {
-                self.cur_step += self.handle_get(stream, args, db, db_config);
+                self.cur_step += self.handle_get(stream, args, db, db_config, connection);
             }
             "del" => {
-                self.cur_step +=
-                    self.handle_del(stream, args, db, db_config, global_state, &is_propagation);
+                self.cur_step += self.handle_del(
+                    stream,
+                    args,
+                    db,
+                    db_config,
+                    global_state,
+                    &is_propagation,
+                    connection,
+                );
             }
             "incr" => {
-                self.cur_step +=
-                    self.handle_incr(stream, args, db, db_config, global_state, &is_propagation);
+                self.cur_step += self.handle_incr(
+                    stream,
+                    args,
+                    db,
+                    db_config,
+                    global_state,
+                    &is_propagation,
+                    connection,
+                );
             }
             "config" => {
-                self.cur_step += self.handle_config(stream, args, global_state);
+                self.cur_step += self.handle_config(stream, args, global_state, connection);
             }
             "keys" => {
-                self.cur_step += self.handle_keys(stream, args, db, db_config);
+                self.cur_step += self.handle_keys(stream, args, db, db_config, connection);
             }
             "info" => {
-                self.handle_info(stream, args, db, db_config, global_state);
+                self.handle_info(stream, args, db, db_config, global_state, connection);
             }
             "replconf" => {
                 self.cur_step +=
@@ -112,10 +127,17 @@ impl Runner {
                 self.cur_step += self.handle_wait(stream, args, global_state, connection);
             }
             "multi" => {
-                self.handle_multi(stream, args, global_state, connection);
+                self.handle_multi(stream, global_state, connection);
+            }
+
+            "exec" => {
+                self.handle_exec(stream, global_state, connection);
             }
 
             "command" | "docs" => {
+                if connection.transaction.is_txing {
+                    write_simple_string(stream, "Queued");
+                }
                 write_simple_string(stream, "OK");
             }
 
@@ -128,11 +150,38 @@ impl Runner {
     fn handle_multi(
         &self,
         stream: &mut TcpStream,
-        _args: &[String],
         _global_state: &RedisGlobalType,
-        _connection: &mut Connection,
+        connection: &mut Connection,
     ) {
+        if connection.transaction.is_txing {
+            write_error(stream, "Transaction has already started");
+        }
+
+        connection.transaction.is_txing = true;
+        connection.transaction.tasks.clear();
         write_simple_string(stream, "OK");
+    }
+
+    fn handle_exec(
+        &self,
+        stream: &mut TcpStream,
+        _global_state: &RedisGlobalType,
+        connection: &mut Connection,
+    ) {
+        if !connection.transaction.is_txing {
+            write_error(stream, "EXEC without MULTI");
+            return;
+        }
+
+        let tasks: Vec<Option<&str>> = connection
+            .transaction
+            .tasks
+            .iter()
+            .map(|s| Some(s.as_str()))
+            .collect();
+
+        connection.transaction.is_txing = false;
+        write_array(stream, &tasks);
     }
 
     pub fn handle_wait(
@@ -306,7 +355,15 @@ impl Runner {
         _db: &DbType,
         _db_config: &DbConfigType,
         global_state: &RedisGlobalType,
+        connection: &mut Connection,
     ) {
+        // If in transaction, queue the command and return
+        if connection.transaction.is_txing {
+            connection.transaction.tasks.push("info".to_string());
+            write_simple_string(stream, "Queued");
+            return;
+        }
+
         let global = global_state.lock().unwrap();
         let role = if global.is_master() {
             "master"
@@ -333,8 +390,24 @@ impl Runner {
         args: &[String],
         db: &DbType,
         db_config: &DbConfigType,
+        connection: &mut Connection,
     ) -> usize {
-        if args.len() == 1 {
+        if connection.transaction.is_txing {
+            if args.len() >= 1 {
+                connection
+                    .transaction
+                    .tasks
+                    .push(format!("keys {}", args[0]));
+            } else {
+                connection.transaction.tasks.push("keys".to_string());
+            }
+            write_simple_string(stream, "Queued");
+            if args.len() == 1 {
+                1
+            } else {
+                0
+            }
+        } else if args.len() == 1 {
             let mut db_config = db_config.lock().unwrap();
             let mut db = db.lock().unwrap();
 
@@ -372,15 +445,36 @@ impl Runner {
         }
     }
 
-    fn handle_ping(&self, stream: &mut TcpStream) {
+    fn handle_ping(&self, stream: &mut TcpStream, connection: &mut Connection) {
+        if connection.transaction.is_txing {
+            connection.transaction.tasks.push(String::from("Ping"));
+            write_simple_string(stream, "Queued");
+
+            return;
+        }
         write_simple_string(stream, "PONG");
     }
 
-    fn handle_echo(&self, stream: &mut TcpStream, args: &[String]) -> usize {
+    fn handle_echo(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        connection: &mut Connection,
+    ) -> usize {
         if let Some(msg) = args.get(0) {
+            if connection.transaction.is_txing {
+                connection.transaction.tasks.push(format!("echo {msg}"));
+                write_simple_string(stream, "Queued");
+                return 1;
+            }
             write_simple_string(stream, msg);
             1
         } else {
+            if connection.transaction.is_txing {
+                connection.transaction.tasks.push(format!("echo"));
+                write_simple_string(stream, "Queued");
+                return 0;
+            }
             write_simple_string(stream, "");
             0
         }
@@ -391,16 +485,30 @@ impl Runner {
         stream: &mut TcpStream,
         args: &[String],
         global_state: &RedisGlobalType,
+        connection: &mut Connection,
     ) -> usize {
         if args.len() >= 2 && args[0].to_ascii_lowercase() == "get" {
             let mut consumed = 1;
-            let global = global_state.lock().unwrap();
-            match args[1].to_ascii_lowercase().as_str() {
+            let config_key = args[1].to_ascii_lowercase();
+
+            if connection.transaction.is_txing {
+                connection
+                    .transaction
+                    .tasks
+                    .push(format!("config get {}", args[1]));
+                write_simple_string(stream, "QUEUED");
+                consumed += 1;
+                return consumed;
+            }
+
+            match config_key.as_str() {
                 "dir" => {
+                    let global = global_state.lock().unwrap();
                     write_array(stream, &[Some("dir"), Some(&global.dir_path)]);
                     consumed += 1;
                 }
                 "dbfilename" => {
+                    let global = global_state.lock().unwrap();
                     write_array(stream, &[Some("dbfilename"), Some(&global.dbfilename)]);
                     consumed += 1;
                 }
@@ -410,7 +518,7 @@ impl Runner {
             }
             consumed
         } else {
-            write_array::<&str>(stream, &[]);
+            write_error(stream, "invalid config argument");
             0
         }
     }
@@ -421,11 +529,21 @@ impl Runner {
         args: &[String],
         db: &DbType,
         db_config: &DbConfigType,
+        connection: &mut Connection,
     ) -> usize {
         if args.len() < 1 {
             write_error(stream, "wrong number of arguments for 'GET'");
             return 0;
         }
+        if connection.transaction.is_txing {
+            connection
+                .transaction
+                .tasks
+                .push(format!("get {}", args[0]));
+            write_simple_string(stream, "QUEUED");
+            return 1;
+        }
+
         let key = &args[0];
 
         let mut config_map = db_config.lock().unwrap();
@@ -460,6 +578,7 @@ impl Runner {
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         is_propagation: &bool,
+        connection: &mut Connection,
     ) -> usize {
         let is_slave_and_propagation = {
             let global = global_state.lock().unwrap();
@@ -471,6 +590,37 @@ impl Runner {
             }
             return 0;
         }
+
+        if connection.transaction.is_txing {
+            let mut consumed = 2;
+            let mut idx = 2;
+            while idx < args.len() {
+                let opt = args[idx].to_ascii_lowercase();
+                match opt.as_str() {
+                    "ex" | "px" => {
+                        if idx + 1 < args.len() {
+                            consumed += 2;
+                            idx += 2;
+                        } else {
+                            write_error(stream, "invalid EX argument");
+                            return consumed;
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            let mut task = String::from("set");
+            for i in 0..consumed {
+                if let Some(arg) = args.get(i) {
+                    task.push(' ');
+                    task.push_str(arg);
+                }
+            }
+            connection.transaction.tasks.push(task);
+            write_simple_string(stream, "Queued");
+            return consumed;
+        }
+
         let mut consumed = 0;
 
         let key = args[0].clone();
@@ -597,6 +747,7 @@ impl Runner {
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         is_propagation: &bool,
+        connection: &mut Connection,
     ) -> usize {
         let is_slave_and_propagation = {
             let global = global_state.lock().unwrap();
@@ -607,6 +758,15 @@ impl Runner {
                 write_error(stream, "wrong number of arguments for 'DEL'");
             }
             return 0;
+        }
+
+        if connection.transaction.is_txing {
+            connection
+                .transaction
+                .tasks
+                .push(format!("del {}", args[0]));
+            write_simple_string(stream, "QUEUED");
+            return 1;
         }
 
         let key = &args[0];
@@ -637,6 +797,7 @@ impl Runner {
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         is_propagation: &bool,
+        connection: &mut Connection,
     ) -> usize {
         let is_slave_and_propagation = {
             let global = global_state.lock().unwrap();
@@ -648,6 +809,15 @@ impl Runner {
                 write_error(stream, "wrong number of arguments for 'INCR'");
             }
             return 0;
+        }
+
+        if connection.transaction.is_txing {
+            connection
+                .transaction
+                .tasks
+                .push(format!("incr {}", args[0]));
+            write_simple_string(stream, "QUEUED");
+            return 1;
         }
 
         let key = &args[0];
