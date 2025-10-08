@@ -6,7 +6,6 @@ use crate::utils::{
     is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
     write_null_bulk_string, write_redis_file, write_simple_string,
 };
-use std::io::Write;
 use std::net::TcpStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -379,7 +378,7 @@ impl Runner {
 
     fn handle_echo(&self, stream: &mut TcpStream, args: &[String]) -> usize {
         if let Some(msg) = args.get(0) {
-            write_simple_string(stream, &format!("\"{msg}\""));
+            write_simple_string(stream, msg);
             1
         } else {
             write_simple_string(stream, "");
