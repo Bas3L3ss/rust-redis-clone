@@ -127,24 +127,28 @@ fn spawn_cleanup_thread(db: DbType, db_config: DbConfigType) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(1));
 
-        let mut db = db.lock().unwrap();
-        let mut config = db_config.lock().unwrap();
+        let expired_keys: Vec<String> = {
+            let config = db_config.lock().unwrap();
+            config
+                .iter()
+                .filter_map(|(key, cfg)| {
+                    if cfg.is_expired() {
+                        Some(key.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
 
-        let expired_keys: Vec<String> = config
-            .iter()
-            .filter_map(|(key, cfg)| {
-                if cfg.is_expired() {
-                    Some(key.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        for key in expired_keys {
-            db.remove(&key);
-            config.remove(&key);
-            println!("Expired key removed: {}", key);
+        if !expired_keys.is_empty() {
+            let mut db = db.lock().unwrap();
+            let mut config = db_config.lock().unwrap();
+            for key in expired_keys {
+                db.remove(&key);
+                config.remove(&key);
+                println!("Expired key removed: {}", key);
+            }
         }
     });
 }
