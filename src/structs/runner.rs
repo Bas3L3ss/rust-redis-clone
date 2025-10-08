@@ -90,7 +90,7 @@ impl Runner {
             }
             "incr" => {
                 self.cur_step +=
-                    self.handle_del(stream, args, db, db_config, global_state, &is_propagation);
+                    self.handle_incr(stream, args, db, db_config, global_state, &is_propagation);
             }
             "config" => {
                 self.cur_step += self.handle_config(stream, args, global_state);
@@ -659,6 +659,7 @@ impl Runner {
                     return 1;
                 }
             };
+            println!("{new_value}");
             map.insert(key.clone(), new_value.to_string());
             added = new_value;
         }
