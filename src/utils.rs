@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
+use crate::structs::request::Request;
 use crate::types::RedisGlobalType;
 
 pub fn write_simple_string(stream: &mut TcpStream, msg: &str) {
@@ -320,4 +321,86 @@ pub fn offset_difference(master_offset: usize, replica_offset: usize) -> usize {
 
 pub fn num_bytes(s: &str) -> usize {
     s.as_bytes().len()
+}
+
+pub fn update_replica_offsets(global_state: &RedisGlobalType) {
+    let (master_offset, replica_states_keys): (i64, Vec<String>) = {
+        let global_guard = global_state.lock().unwrap();
+        (
+            global_guard.offset_replica_sync as i64,
+            global_guard.replica_states.keys().cloned().collect(),
+        )
+    };
+
+    let mut local_offset_updates: Vec<(String, usize)> = Vec::new();
+
+    for slave_port in &replica_states_keys {
+        let replica_state_arc = {
+            let global_guard = global_state.lock().unwrap();
+            match global_guard.replica_states.get(slave_port) {
+                Some(replica) => replica.stream.clone(),
+                None => continue,
+            }
+        };
+
+        let mut stream_guard = match replica_state_arc.lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                eprintln!("Failed to lock stream for replica {}", slave_port);
+                continue;
+            }
+        };
+
+        write_array(
+            &mut *stream_guard,
+            &[Some("REPLCONF"), Some("GETACK"), Some("*")],
+        );
+
+        let mut buf = [0u8; 1024];
+        match stream_guard.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                let mut offset = 0;
+                while offset < n {
+                    match Request::try_parse(&buf[offset..n]) {
+                        Some((req, consumed)) => {
+                            if req.args.len() >= 3
+                                && req.args[0].eq_ignore_ascii_case("REPLCONF")
+                                && req.args[1].eq_ignore_ascii_case("ACK")
+                            {
+                                if let Ok(replica_offset) = req.args[2].parse::<i64>() {
+                                    let diff = master_offset - replica_offset;
+                                    if diff != 0 {
+                                        eprintln!("replica is behind the master by {}", diff);
+                                    }
+                                    local_offset_updates
+                                        .push((slave_port.clone(), replica_offset as usize));
+                                }
+                            }
+                            offset += consumed;
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => {
+                eprintln!("Error reading response from slave {}: {:?}", slave_port, e);
+            }
+        }
+    }
+
+    {
+        let mut global_guard = global_state.lock().unwrap();
+        for (slave_port, new_offset) in local_offset_updates {
+            if let Some(replica) = global_guard.replica_states.get_mut(&slave_port) {
+                replica.local_offset = new_offset;
+            }
+        }
+        if !global_guard.replica_states.is_empty() {
+            global_guard.offset_replica_sync += 37;
+        }
+    }
 }

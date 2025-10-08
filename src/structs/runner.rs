@@ -3,8 +3,8 @@ use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
-    write_null_bulk_string, write_redis_file, write_simple_string,
+    is_matched, propagate_slaves, update_replica_offsets, write_array, write_bulk_string,
+    write_error, write_integer, write_null_bulk_string, write_redis_file, write_simple_string,
 };
 use std::net::TcpStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -161,15 +161,19 @@ impl Runner {
         };
 
         write_integer(stream, satisfied as i64);
+
+        update_replica_offsets(&global_state);
+
         loop {
             {
-                let guard = global_state.lock().unwrap();
-                let acks = guard
-                    .replica_states
-                    .values()
-                    .filter(|replica| replica.local_offset == offset)
-                    .count();
-
+                let acks = {
+                    let guard = global_state.lock().unwrap();
+                    guard
+                        .replica_states
+                        .values()
+                        .filter(|replica| replica.local_offset == offset)
+                        .count()
+                };
                 if acks >= satisfied {
                     return 2;
                 }
