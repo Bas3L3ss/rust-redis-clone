@@ -644,27 +644,27 @@ impl Runner {
                 map.insert(key.clone(), "1".to_string());
                 config_map.insert(key.clone(), Default::default());
                 added = 1;
-            }
-            if let Some(cfg) = config_map.get(key) {
-                if cfg.is_expired() {
-                    map.remove(key);
-                    config_map.remove(key);
-                    write_error(stream, &format!("key {key} is expired"));
-                    return 1;
+            } else {
+                if let Some(cfg) = config_map.get(key) {
+                    if cfg.is_expired() {
+                        map.remove(key);
+                        config_map.remove(key);
+                        write_error(stream, &format!("key {key} is expired"));
+                        return 1;
+                    }
                 }
+                let value = map.get(key).unwrap();
+                let parsed = value.parse::<i64>();
+                let new_value = match parsed {
+                    Ok(val) => val + 1,
+                    Err(_) => {
+                        write_error(stream, "value is not an integer or out of range");
+                        return 1;
+                    }
+                };
+                map.insert(key.clone(), new_value.to_string());
+                added = new_value;
             }
-            let value = map.get(key).unwrap();
-            let parsed = value.parse::<i64>();
-            let new_value = match parsed {
-                Ok(val) => val + 1,
-                Err(_) => {
-                    write_error(stream, "value is not an integer or out of range");
-                    return 1;
-                }
-            };
-            println!("{new_value}");
-            map.insert(key.clone(), new_value.to_string());
-            added = new_value;
         }
         if !is_slave_and_propagation {
             write_integer(stream, added);
