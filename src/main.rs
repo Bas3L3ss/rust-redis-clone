@@ -272,6 +272,7 @@ fn handle_connection(
 
     loop {
         if connection_info.is_slave_established {
+            println!("{stream:#?}");
             break;
         }
         let mut temp = [0u8; 1024];
@@ -286,7 +287,6 @@ fn handle_connection(
 
         read_buffer.extend_from_slice(&temp[..bytes_read]);
 
-        // Try to parse as many complete requests as possible
         while let Some((request, consumed)) = Request::try_parse(&read_buffer) {
             local_offset += consumed;
 
@@ -301,7 +301,6 @@ fn handle_connection(
                 false,
             );
 
-            // Remove the bytes we consumed from the buffer
             read_buffer.drain(..consumed);
         }
     }
