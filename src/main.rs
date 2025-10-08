@@ -63,10 +63,10 @@ pub fn spawn_replica_handler_thread(
         thread::spawn(move || loop {
             thread::sleep(Duration::from_secs(1));
 
-            match global_state.try_lock() {
-                Ok(guard) => println!("Lock acquired! value = {:#?}", *guard),
-                Err(_) => println!("Lock is already held by another thread."),
-            }
+            // match global_state.try_lock() {
+            //     Ok(guard) => println!("Lock acquired! value = {:#?}", *guard),
+            //     Err(_) => println!("Lock is already held by another thread."),
+            // }
 
             let (master_offset, replica_states_keys): (i64, Vec<String>) = {
                 let global_guard = global_state.lock().unwrap();
