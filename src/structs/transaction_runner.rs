@@ -408,26 +408,38 @@ impl<'a> TransactionRunner<'a> {
     }
 
     fn string(&self, message: &String) -> Result {
-        Result::Some(format!("+{}\r\n", message))
+        // Simple string RESP type
+        Result::Some(message.clone())
     }
 
     fn bulk_string(&self, message: &String) -> Result {
-        Result::Some(format!("${}\r\n{}\r\n", message.len(), message))
+        if message.is_empty() {
+            Result::Some("nil".to_string())
+        } else {
+            Result::Some(message.clone())
+        }
     }
 
     fn array(&self, messages: Vec<String>) -> Result {
-        let mut resp = format!("*{}\r\n", messages.len());
-        for item in messages {
-            resp.push_str(&format!("${}\r\n{}\r\n", item.len(), item));
+        if messages.is_empty() {
+            return Result::Some("nil".to_string());
         }
-        Result::Some(resp)
+        let formatted = messages
+            .iter()
+            .enumerate()
+            .map(|(i, v)| format!("{}) {}", i + 1, v))
+            .collect::<Vec<_>>()
+            .join("\n");
+        Result::Some(formatted)
     }
 
     fn none(&self) -> Result {
-        Result::Some("$-1\r\n".to_string())
+        // Represent null/nil
+        Result::Some("nil".to_string())
     }
 
     fn integer(&self, message: &String) -> Result {
-        Result::Some(format!(":{}\r\n", message))
+        // Format as (integer) n
+        Result::Some(format!("(integer) {}", message))
     }
 }
