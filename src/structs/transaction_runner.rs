@@ -408,38 +408,36 @@ impl<'a> TransactionRunner<'a> {
     }
 
     fn string(&self, message: &String) -> Result {
-        // Simple string RESP type
-        Result::Some(message.clone())
+        // RESP Simple String: +message\r\n
+        Result::Some(format!("+{}\r\n", message))
     }
 
     fn bulk_string(&self, message: &String) -> Result {
         if message.is_empty() {
-            Result::Some("nil".to_string())
+            Result::Some("$-1\r\n".to_string())
         } else {
-            Result::Some(message.clone())
+            Result::Some(format!("${}\r\n{}\r\n", message.len(), message))
         }
     }
 
     fn array(&self, messages: Vec<String>) -> Result {
-        if messages.is_empty() {
-            return Result::Some("nil".to_string());
+        let mut resp = format!("*{}\r\n", messages.len());
+        for msg in messages {
+            resp.push_str(&format!("${}\r\n{}\r\n", msg.len(), msg));
         }
-        let formatted = messages
-            .iter()
-            .enumerate()
-            .map(|(i, v)| format!("{}) {}", i + 1, v))
-            .collect::<Vec<_>>()
-            .join("\n");
-        Result::Some(formatted)
+        Result::Some(resp)
     }
 
     fn none(&self) -> Result {
-        // Represent null/nil
-        Result::Some("nil".to_string())
+        // RESP Null Bulk String
+        Result::Some("$-1\r\n".to_string())
     }
 
     fn integer(&self, message: &String) -> Result {
-        // Format as (integer) n
-        Result::Some(format!("(integer) {}", message))
+        // RESP Integer: :n\r\n
+        match message.parse::<i64>() {
+            Ok(n) => Result::Some(format!(":{}\r\n", n)),
+            Err(_) => Result::Err("ERR value is not an integer".to_string()),
+        }
     }
 }

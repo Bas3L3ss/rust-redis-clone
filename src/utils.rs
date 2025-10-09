@@ -42,6 +42,21 @@ pub fn write_array<T: AsRef<str>>(stream: &mut TcpStream, items: &[Option<T>]) {
     }
 }
 
+pub fn write_resp_array(stream: &mut TcpStream, items: &[Option<String>]) {
+    let _ = stream.write_all(format!("*{}\r\n", items.len()).as_bytes());
+    for item in items {
+        match item {
+            Some(resp) => {
+                let _ = stream.write_all(resp.as_bytes());
+            }
+            None => {
+                // Null Bulk String
+                let _ = stream.write_all(b"$-1\r\n");
+            }
+        }
+    }
+}
+
 pub fn write_redis_file(stream: &mut TcpStream, file_name: &str) {
     const EMPTY_RDB: &[u8] = &[
         0x52, 0x45, 0x44, 0x49, 0x53, 0x30, 0x30, 0x31, 0x31, 0xfa, 0x09, 0x72, 0x65, 0x64, 0x69,

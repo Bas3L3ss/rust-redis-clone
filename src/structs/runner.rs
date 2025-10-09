@@ -5,7 +5,7 @@ use crate::structs::transaction_runner::TransactionRunner;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
     is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
-    write_null_bulk_string, write_redis_file, write_simple_string,
+    write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
 };
 use std::net::TcpStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -177,7 +177,7 @@ impl Runner {
         let mut runner = TransactionRunner::new(connection);
         runner.execute_transactions(stream, db, db_config, global_state);
 
-        write_array(stream, &connection.transaction.response);
+        write_resp_array(stream, &connection.transaction.response);
     }
 
     pub fn handle_wait(
