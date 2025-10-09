@@ -130,6 +130,9 @@ impl Runner {
             "multi" => {
                 self.handle_multi(stream, connection);
             }
+            "discard" => {
+                self.handle_discard(stream, connection);
+            }
 
             "exec" => {
                 self.handle_exec(stream, db, db_config, global_state, connection);
@@ -146,6 +149,18 @@ impl Runner {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_discard(&self, stream: &mut TcpStream, connection: &mut Connection) {
+        if !connection.transaction.is_txing {
+            write_error(stream, "DISCARD without MULTI");
+            return;
+        }
+        connection.transaction.is_txing = false;
+        connection.transaction.tasks.clear();
+        connection.transaction.response.clear();
+        connection.transaction.job_done_at = None;
+        write_simple_string(stream, "OK");
     }
 
     fn handle_multi(&self, stream: &mut TcpStream, connection: &mut Connection) {
