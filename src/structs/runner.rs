@@ -1,6 +1,7 @@
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
+use crate::structs::transaction_runner::TransactionRunner;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
     is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
@@ -127,11 +128,11 @@ impl Runner {
                 self.cur_step += self.handle_wait(stream, args, global_state, connection);
             }
             "multi" => {
-                self.handle_multi(stream, global_state, connection);
+                self.handle_multi(stream, connection);
             }
 
             "exec" => {
-                self.handle_exec(stream, global_state, connection);
+                self.handle_exec(stream, db, db_config, global_state, connection);
             }
 
             "command" | "docs" => {
@@ -147,12 +148,7 @@ impl Runner {
         }
     }
 
-    fn handle_multi(
-        &self,
-        stream: &mut TcpStream,
-        _global_state: &RedisGlobalType,
-        connection: &mut Connection,
-    ) {
+    fn handle_multi(&self, stream: &mut TcpStream, connection: &mut Connection) {
         if connection.transaction.is_txing {
             write_error(stream, "Transaction has already started");
         }
@@ -165,23 +161,21 @@ impl Runner {
     fn handle_exec(
         &self,
         stream: &mut TcpStream,
-        _global_state: &RedisGlobalType,
+        db: &DbType,
+        db_config: &DbConfigType,
+        global_state: &RedisGlobalType,
         connection: &mut Connection,
     ) {
         if !connection.transaction.is_txing {
             write_error(stream, "EXEC without MULTI");
             return;
         }
-
-        let tasks: Vec<Option<&str>> = connection
-            .transaction
-            .tasks
-            .iter()
-            .map(|s| Some(s.as_str()))
-            .collect();
-
         connection.transaction.is_txing = false;
-        write_array(stream, &tasks);
+
+        let mut runner = TransactionRunner::new(connection);
+        runner.execute_transactions(stream, db, db_config, global_state);
+
+        write_array(stream, &connection.transaction.response);
     }
 
     pub fn handle_wait(

@@ -2,7 +2,7 @@ pub struct Transaction {
     pub is_txing: bool,
     pub tasks: Vec<String>,
     pub job_done_at: usize,
-    pub response: Vec<String>,
+    pub response: Vec<Option<String>>,
 }
 
 impl Transaction {
