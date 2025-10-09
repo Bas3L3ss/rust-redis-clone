@@ -187,12 +187,12 @@ impl Runner {
             write_error(stream, "EXEC without MULTI");
             return;
         }
-        connection.transaction.is_txing = false;
 
         let mut runner = TransactionRunner::new(connection);
         runner.execute_transactions(stream, db, db_config, global_state);
 
         write_resp_array(stream, &connection.transaction.response);
+        connection.transaction.is_txing = false;
     }
 
     pub fn handle_wait(

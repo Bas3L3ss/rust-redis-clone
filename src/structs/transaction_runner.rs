@@ -39,10 +39,7 @@ impl<'a> TransactionRunner<'a> {
 
             let re = match res {
                 Result::Some(s) => s,
-                Result::Err(err) => {
-                    write_error(stream, &err);
-                    break;
-                }
+                Result::Err(err) => err,
             };
 
             self.transaction.response.push(Some(re));
@@ -404,7 +401,7 @@ impl<'a> TransactionRunner<'a> {
     }
 
     fn err(&self, message: &str) -> Result {
-        Result::Err(message.to_string())
+        Result::Some(format!("-ERR {}\r\n", message))
     }
 
     fn string(&self, message: &String) -> Result {
