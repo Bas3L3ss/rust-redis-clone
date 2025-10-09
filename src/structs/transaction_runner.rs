@@ -34,7 +34,7 @@ impl<'a> TransactionRunner<'a> {
     ) {
         let tasks = self.transaction.tasks.clone();
         for (idx, task) in tasks.iter().enumerate() {
-            let args: Vec<String> = task.split("  ").map(|s| s.to_string()).collect();
+            let args: Vec<String> = task.split_whitespace().map(|s| s.to_string()).collect();
             let res = self.exec(db, db_config, global_state, args);
 
             let re = match res {
@@ -47,7 +47,7 @@ impl<'a> TransactionRunner<'a> {
 
             self.transaction.response.push(Some(re));
 
-            self.transaction.job_done_at = idx;
+            self.transaction.job_done_at = Some(idx);
         }
     }
 
@@ -65,7 +65,7 @@ impl<'a> TransactionRunner<'a> {
         let command = args[0].to_ascii_lowercase();
         let args = &args[1..];
 
-        eprintln!("Received command: {:?}", command);
+        eprintln!("Transaction execute command: {:?}", command);
 
         match command.as_str() {
             "ping" => self.handle_ping(),

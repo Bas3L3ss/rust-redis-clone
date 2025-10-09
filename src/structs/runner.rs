@@ -155,6 +155,8 @@ impl Runner {
 
         connection.transaction.is_txing = true;
         connection.transaction.tasks.clear();
+        connection.transaction.response.clear();
+        connection.transaction.job_done_at = None;
         write_simple_string(stream, "OK");
     }
 
