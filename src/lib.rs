@@ -1,3 +1,4 @@
+pub mod enums;
 pub mod rdb;
 pub mod structs;
 pub mod types;

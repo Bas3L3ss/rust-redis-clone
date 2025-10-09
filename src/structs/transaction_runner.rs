@@ -1,18 +1,11 @@
-use std::{
-    net::TcpStream,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
+    enums::{transaction_result::TransactionResult, val_type::ValueType},
     structs::{config::Config, connection::Connection, transaction::Transaction},
     types::{DbConfigType, DbType, RedisGlobalType},
-    utils::{is_matched, propagate_slaves, write_error},
+    utils::{is_matched, propagate_slaves},
 };
-
-pub enum Result {
-    Some(String),
-    Err(String),
-}
 
 pub struct TransactionRunner<'a> {
     transaction: &'a mut Transaction,
@@ -27,7 +20,6 @@ impl<'a> TransactionRunner<'a> {
 
     pub fn execute_transactions(
         &mut self,
-        stream: &mut TcpStream,
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
@@ -38,8 +30,8 @@ impl<'a> TransactionRunner<'a> {
             let res = self.exec(db, db_config, global_state, args);
 
             let re = match res {
-                Result::Some(s) => s,
-                Result::Err(err) => err,
+                TransactionResult::Some(s) => s,
+                TransactionResult::Err(err) => err,
             };
 
             self.transaction.response.push(Some(re));
@@ -54,7 +46,7 @@ impl<'a> TransactionRunner<'a> {
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         args: Vec<String>,
-    ) -> Result {
+    ) -> TransactionResult {
         if args.is_empty() {
             return self.none();
         }
@@ -91,7 +83,7 @@ impl<'a> TransactionRunner<'a> {
         _db: &DbType,
         _db_config: &DbConfigType,
         global_state: &RedisGlobalType,
-    ) -> Result {
+    ) -> TransactionResult {
         let global = global_state.lock().unwrap();
         let role = if global.is_master() {
             "master"
@@ -112,7 +104,12 @@ impl<'a> TransactionRunner<'a> {
         self.bulk_string(&info)
     }
 
-    fn handle_keys(&self, args: &[String], db: &DbType, db_config: &DbConfigType) -> Result {
+    fn handle_keys(
+        &self,
+        args: &[String],
+        db: &DbType,
+        db_config: &DbConfigType,
+    ) -> TransactionResult {
         if args.len() == 1 {
             let mut db_config = db_config.lock().unwrap();
             let mut db = db.lock().unwrap();
@@ -149,11 +146,11 @@ impl<'a> TransactionRunner<'a> {
         }
     }
 
-    fn handle_ping(&self) -> Result {
+    fn handle_ping(&self) -> TransactionResult {
         return self.string(&"PONG".to_string());
     }
 
-    fn handle_echo(&self, args: &[String]) -> Result {
+    fn handle_echo(&self, args: &[String]) -> TransactionResult {
         if let Some(msg) = args.get(0) {
             return self.string(msg);
         } else {
@@ -161,7 +158,7 @@ impl<'a> TransactionRunner<'a> {
         }
     }
 
-    fn handle_config(&self, args: &[String], global_state: &RedisGlobalType) -> Result {
+    fn handle_config(&self, args: &[String], global_state: &RedisGlobalType) -> TransactionResult {
         if args.len() >= 2 && args[0].to_ascii_lowercase() == "get" {
             let config_key = args[1].to_ascii_lowercase();
 
@@ -181,7 +178,12 @@ impl<'a> TransactionRunner<'a> {
         }
     }
 
-    fn handle_get(&self, args: &[String], db: &DbType, db_config: &DbConfigType) -> Result {
+    fn handle_get(
+        &self,
+        args: &[String],
+        db: &DbType,
+        db_config: &DbConfigType,
+    ) -> TransactionResult {
         if args.len() < 1 {
             return self.err("invalid GET argument");
         }
@@ -204,7 +206,7 @@ impl<'a> TransactionRunner<'a> {
 
             let map = db.lock().unwrap();
             if let Some(val) = map.get(key) {
-                return self.string(val);
+                return self.string(&val.to_string());
             } else {
                 return self.none();
             }
@@ -217,7 +219,7 @@ impl<'a> TransactionRunner<'a> {
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
-    ) -> Result {
+    ) -> TransactionResult {
         if args.len() < 2 {
             return self.err("invalid SET argument");
         }
@@ -278,7 +280,7 @@ impl<'a> TransactionRunner<'a> {
 
         {
             let mut map = db.lock().unwrap();
-            map.insert(key.clone(), value.clone());
+            map.insert(key.clone(), ValueType::String(value.clone()));
         }
         {
             let mut config_map = db_config.lock().unwrap();
@@ -326,7 +328,7 @@ impl<'a> TransactionRunner<'a> {
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
-    ) -> Result {
+    ) -> TransactionResult {
         if args.is_empty() {
             return self.err("invalid DEL argument");
         }
@@ -355,22 +357,24 @@ impl<'a> TransactionRunner<'a> {
         db: &DbType,
         db_config: &DbConfigType,
         global_state: &RedisGlobalType,
-    ) -> Result {
+    ) -> TransactionResult {
+        use crate::enums::val_type::ValueType;
+
         if args.is_empty() {
             return self.err("invalid INCR argument");
         }
 
         let key = &args[0];
-        let mut added = 0;
+        let mut result_value = 0;
 
         {
             let mut map = db.lock().unwrap();
             let mut config_map = db_config.lock().unwrap();
 
             if !config_map.contains_key(key) || !map.contains_key(key) {
-                map.insert(key.clone(), "1".to_string());
+                map.insert(key.clone(), ValueType::String("1".to_string()));
                 config_map.insert(key.clone(), Default::default());
-                added = 1;
+                result_value = 1;
             } else {
                 if let Some(cfg) = config_map.get(key) {
                     if cfg.is_expired() {
@@ -380,61 +384,66 @@ impl<'a> TransactionRunner<'a> {
                     }
                 }
                 let value = map.get(key).unwrap();
-                let parsed = value.parse::<i64>();
+                let parsed = match value {
+                    ValueType::String(s) => s.parse::<i64>(),
+                    _ => {
+                        return self.err("value is not an integer or out of range");
+                    }
+                };
                 let new_value = match parsed {
                     Ok(val) => val + 1,
                     Err(_) => {
-                        return self.err(&format!("value is not an integer or out of range"));
+                        return self.err("value is not an integer or out of range");
                     }
                 };
-                map.insert(key.clone(), new_value.to_string());
-                added = new_value;
+                map.insert(key.clone(), ValueType::String(new_value.to_string()));
+                result_value = new_value;
             }
         }
 
         propagate_slaves(
             global_state,
-            &format!("*2\r\n$3\r\nIncr\r\n${}\r\n{}\r\n", key.len(), key),
+            &format!("*2\r\n$3\r\nINCR\r\n${}\r\n{}\r\n", key.len(), key),
         );
 
-        self.integer(&added.to_string())
+        self.integer(&result_value.to_string())
     }
 
-    fn err(&self, message: &str) -> Result {
-        Result::Some(format!("-ERR {}\r\n", message))
+    fn err(&self, message: &str) -> TransactionResult {
+        TransactionResult::Some(format!("-ERR {}\r\n", message))
     }
 
-    fn string(&self, message: &String) -> Result {
+    fn string(&self, message: &String) -> TransactionResult {
         // RESP Simple String: +message\r\n
-        Result::Some(format!("+{}\r\n", message))
+        TransactionResult::Some(format!("+{}\r\n", message))
     }
 
-    fn bulk_string(&self, message: &String) -> Result {
+    fn bulk_string(&self, message: &String) -> TransactionResult {
         if message.is_empty() {
-            Result::Some("$-1\r\n".to_string())
+            TransactionResult::Some("$-1\r\n".to_string())
         } else {
-            Result::Some(format!("${}\r\n{}\r\n", message.len(), message))
+            TransactionResult::Some(format!("${}\r\n{}\r\n", message.len(), message))
         }
     }
 
-    fn array(&self, messages: Vec<String>) -> Result {
+    fn array(&self, messages: Vec<String>) -> TransactionResult {
         let mut resp = format!("*{}\r\n", messages.len());
         for msg in messages {
             resp.push_str(&format!("${}\r\n{}\r\n", msg.len(), msg));
         }
-        Result::Some(resp)
+        TransactionResult::Some(resp)
     }
 
-    fn none(&self) -> Result {
+    fn none(&self) -> TransactionResult {
         // RESP Null Bulk String
-        Result::Some("$-1\r\n".to_string())
+        TransactionResult::Some("$-1\r\n".to_string())
     }
 
-    fn integer(&self, message: &String) -> Result {
+    fn integer(&self, message: &String) -> TransactionResult {
         // RESP Integer: :n\r\n
         match message.parse::<i64>() {
-            Ok(n) => Result::Some(format!(":{}\r\n", n)),
-            Err(_) => Result::Err("ERR value is not an integer".to_string()),
+            Ok(n) => TransactionResult::Some(format!(":{}\r\n", n)),
+            Err(_) => TransactionResult::Err("ERR value is not an integer".to_string()),
         }
     }
 }

@@ -3,8 +3,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::structs::{config::Config, global::RedisGlobal};
+use crate::{
+    enums::val_type::ValueType,
+    structs::{config::Config, global::RedisGlobal},
+};
 
-pub type DbType = Arc<Mutex<HashMap<String, String>>>;
+pub type DbType = Arc<Mutex<HashMap<String, ValueType>>>;
 pub type RedisGlobalType = Arc<Mutex<RedisGlobal>>;
 pub type DbConfigType = Arc<Mutex<HashMap<String, Config>>>;

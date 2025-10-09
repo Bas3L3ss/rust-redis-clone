@@ -1,3 +1,4 @@
+use crate::enums::val_type::ValueType;
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
@@ -138,6 +139,10 @@ impl Runner {
                 self.handle_exec(stream, db, db_config, global_state, connection);
             }
 
+            "type" => {
+                self.cur_step += self.handle_type(stream, args, db, db_config, connection);
+            }
+
             "command" | "docs" => {
                 if connection.transaction.is_txing {
                     write_simple_string(stream, "QUEUED");
@@ -149,6 +154,53 @@ impl Runner {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_type(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        db_config: &DbConfigType,
+        connection: &mut Connection,
+    ) -> usize {
+        if args.len() < 1 {
+            write_error(stream, "wrong number of arguments for 'TYPE'");
+            return 0;
+        }
+
+        let key = &args[0];
+
+        if connection.transaction.is_txing {
+            // Queue the full command with key
+            connection.transaction.tasks.push(format!("type {}", key));
+            write_simple_string(stream, "QUEUED");
+            return 1;
+        }
+
+        // Check for expiration
+        let mut config_map = db_config.lock().unwrap();
+        let expired = if let Some(config) = config_map.get(key) {
+            config.is_expired()
+        } else {
+            false
+        };
+        if expired {
+            config_map.remove(key);
+            let mut map = db.lock().unwrap();
+            map.remove(key);
+            write_simple_string(stream, "none");
+            return 1;
+        }
+        drop(config_map);
+
+        let map = db.lock().unwrap();
+        if let Some(val) = map.get(key) {
+            write_simple_string(stream, val.type_name());
+        } else {
+            write_simple_string(stream, "none");
+        }
+        1
     }
 
     fn handle_discard(&self, stream: &mut TcpStream, connection: &mut Connection) {
@@ -189,7 +241,7 @@ impl Runner {
         }
 
         let mut runner = TransactionRunner::new(connection);
-        runner.execute_transactions(stream, db, db_config, global_state);
+        runner.execute_transactions(db, db_config, global_state);
 
         write_resp_array(stream, &connection.transaction.response);
         connection.transaction.is_txing = false;
@@ -573,7 +625,7 @@ impl Runner {
 
             let map = db.lock().unwrap();
             if let Some(val) = map.get(key) {
-                write_bulk_string(stream, val);
+                write_bulk_string(stream, &val.to_string());
             } else {
                 write_null_bulk_string(stream);
             }
@@ -705,7 +757,7 @@ impl Runner {
 
         {
             let mut map = db.lock().unwrap();
-            map.insert(key.clone(), value.clone());
+            map.insert(key.clone(), ValueType::String(value.clone()));
         }
         {
             let mut config_map = db_config.lock().unwrap();
@@ -832,16 +884,16 @@ impl Runner {
         }
 
         let key = &args[0];
-        let mut added = 0;
+        let mut result_value = 0;
 
         {
             let mut map = db.lock().unwrap();
             let mut config_map = db_config.lock().unwrap();
 
             if !config_map.contains_key(key) || !map.contains_key(key) {
-                map.insert(key.clone(), "1".to_string());
+                map.insert(key.clone(), ValueType::String("1".to_string()));
                 config_map.insert(key.clone(), Default::default());
-                added = 1;
+                result_value = 1;
             } else {
                 if let Some(cfg) = config_map.get(key) {
                     if cfg.is_expired() {
@@ -852,7 +904,13 @@ impl Runner {
                     }
                 }
                 let value = map.get(key).unwrap();
-                let parsed = value.parse::<i64>();
+                let parsed = match value {
+                    ValueType::String(s) => s.parse::<i64>(),
+                    _ => {
+                        write_error(stream, "value is not an integer or out of range");
+                        return 1;
+                    }
+                };
                 let new_value = match parsed {
                     Ok(val) => val + 1,
                     Err(_) => {
@@ -860,16 +918,16 @@ impl Runner {
                         return 1;
                     }
                 };
-                map.insert(key.clone(), new_value.to_string());
-                added = new_value;
+                map.insert(key.clone(), ValueType::String(new_value.to_string()));
+                result_value = new_value;
             }
         }
         if !is_slave_and_propagation {
-            write_integer(stream, added);
+            write_integer(stream, result_value);
         }
         propagate_slaves(
             global_state,
-            &format!("*2\r\n$3\r\nIncr\r\n${}\r\n{}\r\n", key.len(), key),
+            &format!("*2\r\n$4\r\nINCR\r\n${}\r\n{}\r\n", key.len(), key),
         );
         1
     }
