@@ -2,6 +2,7 @@ use memmap2::Mmap;
 use std::fs::File;
 
 use crate::{
+    enums::val_type::ValueType,
     rdb::structs::header_metadata::HeaderMetadata,
     structs::config::Config,
     types::{DbConfigType, DbType, RedisGlobalType},
@@ -69,7 +70,7 @@ pub fn start_up(db: DbType, db_config: DbConfigType, global_state: RedisGlobalTy
             // Insert into DB
             {
                 let mut db_guard = db.lock().unwrap();
-                db_guard.insert(key.clone(), value);
+                db_guard.insert(key.clone(), ValueType::String(value));
             }
 
             // Insert config (expiry)
