@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
+use crate::structs::entries::Stream;
+
 pub enum ValueType {
     String(String),
     List(Vec<ValueType>),
     Set(Vec<ValueType>),
     ZSet(Vec<(ValueType, f64)>),
     Hash(HashMap<String, ValueType>),
-    Stream(Vec<(String, ValueType)>), // Simplified; actual Redis streams are more complex
-    VectorSet(Vec<Vec<f32>>),         // For future AI/vector search support
+    Stream(Stream),
+    VectorSet(Vec<Vec<f32>>), // For future AI/vector search support
 }
 
 impl ValueType {
@@ -50,13 +52,7 @@ impl ToString for ValueType {
                     .collect();
                 format!("{{{}}}", items.join(", "))
             }
-            ValueType::Stream(stream) => {
-                let items: Vec<String> = stream
-                    .iter()
-                    .map(|(id, v)| format!("{}: {}", id, v.to_string()))
-                    .collect();
-                format!("[{}]", items.join(", "))
-            }
+            ValueType::Stream(stream) => stream.to_string(),
             ValueType::VectorSet(vectors) => {
                 let items: Vec<String> = vectors
                     .iter()

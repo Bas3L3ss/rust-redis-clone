@@ -1,6 +1,7 @@
 use crate::enums::val_type::ValueType;
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
+use crate::structs::entries::Stream;
 use crate::structs::replica::add_replica;
 use crate::structs::transaction_runner::TransactionRunner;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
@@ -130,6 +131,18 @@ impl Runner {
             }
             "multi" => {
                 self.handle_multi(stream, connection);
+            }
+
+            "xadd" => {
+                self.handle_xadd(
+                    stream,
+                    args,
+                    db,
+                    db_config,
+                    global_state,
+                    &is_propagation,
+                    connection,
+                );
             }
             "discard" => {
                 self.handle_discard(stream, connection);
@@ -633,6 +646,70 @@ impl Runner {
         1
     }
 
+    fn handle_xadd(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        db_config: &DbConfigType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        connection: &mut Connection,
+    ) {
+        // TODO: transaction runner and enqueuing
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+        if args.len() < 3 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'XACC'");
+            }
+            return;
+        }
+
+        let stream_key = &args[0];
+        let id = &args[1];
+        let mut kv = Vec::new();
+        let mut idx = 2;
+        while idx + 1 < args.len() {
+            let key = args[idx].clone();
+            let value = args[idx + 1].clone();
+            kv.push((key, value));
+            idx += 2;
+        }
+
+        {
+            let mut map = db.lock().unwrap();
+
+            if let Some(existing) = map.get_mut(stream_key) {
+                if let ValueType::Stream(ref mut stream_obj) = existing {
+                    stream_obj.add_entries(id.clone(), kv.clone());
+                } else {
+                    let mut s = Stream::new();
+                    s.add_entries(id.clone(), kv.clone());
+                    map.insert(stream_key.clone(), ValueType::Stream(s));
+                }
+            } else {
+                let mut s = Stream::new();
+                s.add_entries(id.clone(), kv.clone());
+                map.insert(stream_key.clone(), ValueType::Stream(s));
+            }
+        }
+
+        if !is_slave_and_propagation {
+            write_simple_string(stream, id);
+            let mut propagation = format!("XADD {}", id);
+            for (k, v) in &kv {
+                propagation.push(' ');
+                propagation.push_str(k);
+                propagation.push(' ');
+                propagation.push_str(v);
+            }
+            propagate_slaves(global_state, &propagation);
+        }
+    }
+
     fn handle_set(
         &self,
         stream: &mut TcpStream,
@@ -648,7 +725,7 @@ impl Runner {
             !global.is_master() && *is_propagation
         };
         if args.len() < 2 {
-            if is_slave_and_propagation {
+            if !is_slave_and_propagation {
                 write_error(stream, "wrong number of arguments for 'SET'");
             }
             return 0;
@@ -817,7 +894,7 @@ impl Runner {
             !global.is_master() && *is_propagation
         };
         if args.is_empty() {
-            if is_slave_and_propagation {
+            if !is_slave_and_propagation {
                 write_error(stream, "wrong number of arguments for 'DEL'");
             }
             return 0;
@@ -868,7 +945,7 @@ impl Runner {
         };
 
         if args.is_empty() {
-            if is_slave_and_propagation {
+            if !is_slave_and_propagation {
                 write_error(stream, "wrong number of arguments for 'INCR'");
             }
             return 0;

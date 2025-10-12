@@ -1,5 +1,6 @@
 pub mod config;
 pub mod connection;
+pub mod entries;
 pub mod global;
 pub mod replica;
 pub mod request;
