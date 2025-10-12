@@ -661,12 +661,31 @@ impl Runner {
             write_error(stream, "wrong number of arguments for 'XACC'");
             return 0;
         };
-
         let stream_key = &args[0];
-        let (start, end) = (args[1].parse::<u64>(), args[2].parse::<u64>());
-        if start.is_err() || end.is_err() {
-            println!("hi");
 
+        fn parse_range(range: &String) -> Option<(u64, u64)> {
+            if range.contains("-") {
+                let parts: Vec<&str> = range.split('-').collect();
+                if parts.len() == 2 {
+                    if let (Ok(ms), Ok(seq)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                        return Some((ms, seq));
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            } else {
+                if let Ok(ms) = range.parse::<u64>() {
+                    return Some((ms, 0));
+                } else {
+                    return None;
+                }
+            }
+        }
+
+        let (start, end) = (parse_range(&args[1]), parse_range(&args[2]));
+        if start.is_none() || end.is_none() {
             write_error(
                 stream,
                 "ERR invalid arguments for XRANGE: start and end must be integers",
@@ -683,7 +702,6 @@ impl Runner {
             if let ValueType::Stream(ref stream) = val {
                 _stream_obj = Some(stream);
             } else {
-                println!("ho");
                 write_error(
                     stream,
                     "WRONGTYPE Operation against a key holding the wrong kind of value",
@@ -691,14 +709,12 @@ impl Runner {
                 return 3;
             }
         } else {
-            println!("he");
-
             write_null_bulk_string(stream);
             return 3;
         };
 
         if let Some(stream) = _stream_obj {
-            let range = stream.range((start, 0), (end, 0));
+            let range = stream.range(start, end);
             println!("{range:#?}");
         }
 
