@@ -26,14 +26,13 @@ impl Stream {
         }
         let (curr_ms, curr_seq) = (curr_ms.unwrap(), curr_seq.unwrap());
 
-        if self.entries.is_empty() {
-            if curr_ms == 0 && curr_seq == 0 {
-                return Some("The ID specified in XADD must be greater than 0-0".to_string());
-            }
-            if curr_ms == 0 && curr_seq < 1 {
-                return Some("The ID specified in XADD must be greater than 0-0".to_string());
-            }
-        } else {
+        if curr_ms == 0 && curr_seq == 0 {
+            return Some("The ID specified in XADD must be greater than 0-0".to_string());
+        }
+        if curr_ms == 0 && curr_seq < 1 {
+            return Some("The ID specified in XADD must be greater than 0-0".to_string());
+        }
+        if !self.entries.is_empty() {
             let last_entry = self.entries.last().unwrap();
             let last_ms = last_entry.milisec;
             let last_seq = last_entry.sequence_number;

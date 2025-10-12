@@ -365,7 +365,7 @@ impl<'a> TransactionRunner<'a> {
         }
 
         let key = &args[0];
-        let mut result_value = 0;
+        let mut _result_value = 0;
 
         {
             let mut map = db.lock().unwrap();
@@ -374,7 +374,7 @@ impl<'a> TransactionRunner<'a> {
             if !config_map.contains_key(key) || !map.contains_key(key) {
                 map.insert(key.clone(), ValueType::String("1".to_string()));
                 config_map.insert(key.clone(), Default::default());
-                result_value = 1;
+                _result_value = 1;
             } else {
                 if let Some(cfg) = config_map.get(key) {
                     if cfg.is_expired() {
@@ -397,7 +397,7 @@ impl<'a> TransactionRunner<'a> {
                     }
                 };
                 map.insert(key.clone(), ValueType::String(new_value.to_string()));
-                result_value = new_value;
+                _result_value = new_value;
             }
         }
 
@@ -406,7 +406,7 @@ impl<'a> TransactionRunner<'a> {
             &format!("*2\r\n$3\r\nINCR\r\n${}\r\n{}\r\n", key.len(), key),
         );
 
-        self.integer(&result_value.to_string())
+        self.integer(&_result_value.to_string())
     }
 
     fn err(&self, message: &str) -> TransactionResult {
