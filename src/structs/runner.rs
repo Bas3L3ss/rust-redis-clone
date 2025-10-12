@@ -665,6 +665,8 @@ impl Runner {
         let stream_key = &args[0];
         let (start, end) = (args[1].parse::<u64>(), args[2].parse::<u64>());
         if start.is_err() || end.is_err() {
+            println!("hi");
+
             write_error(
                 stream,
                 "ERR invalid arguments for XRANGE: start and end must be integers",
@@ -681,15 +683,18 @@ impl Runner {
             if let ValueType::Stream(ref stream) = val {
                 _stream_obj = Some(stream);
             } else {
+                println!("ho");
                 write_error(
                     stream,
                     "WRONGTYPE Operation against a key holding the wrong kind of value",
                 );
-                return 0;
+                return 3;
             }
         } else {
+            println!("he");
+
             write_null_bulk_string(stream);
-            return 0;
+            return 3;
         };
 
         if let Some(stream) = _stream_obj {
