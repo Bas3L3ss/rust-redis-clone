@@ -13,7 +13,6 @@ use crate::utils::{
 use std::io::Write;
 use std::net::TcpStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::vec;
 
 pub struct Runner {
     pub args: Vec<String>,
@@ -666,6 +665,10 @@ impl Runner {
         let stream_key = &args[0];
 
         fn parse_range(range: &String) -> Option<(u64, u64)> {
+            if range == "-" {
+                return Some((0, 0));
+            }
+
             if range.contains("-") {
                 let parts: Vec<&str> = range.split('-').collect();
                 if parts.len() == 2 {
