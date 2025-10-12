@@ -2,8 +2,8 @@ use crate::enums::add_stream_entries_result::StreamResult;
 use crate::enums::val_type::ValueType;
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
-use crate::structs::entries::Stream;
 use crate::structs::replica::add_replica;
+use crate::structs::stream::Stream;
 use crate::structs::transaction_runner::TransactionRunner;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
@@ -133,7 +133,6 @@ impl Runner {
             "multi" => {
                 self.handle_multi(stream, connection);
             }
-
             "xadd" => {
                 self.cur_step += self.handle_xadd(
                     stream,
@@ -144,6 +143,9 @@ impl Runner {
                     &is_propagation,
                     connection,
                 );
+            }
+            "xrange" => {
+                self.cur_step += self.handle_xrange(stream, args, db, db_config, connection);
             }
             "discard" => {
                 self.handle_discard(stream, connection);
@@ -647,6 +649,57 @@ impl Runner {
         1
     }
 
+    fn handle_xrange(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _db_config: &DbConfigType,
+        _connection: &mut Connection,
+    ) -> usize {
+        if args.len() < 3 {
+            write_error(stream, "wrong number of arguments for 'XACC'");
+            return 0;
+        };
+
+        let stream_key = &args[0];
+        let (start, end) = (args[1].parse::<u64>(), args[2].parse::<u64>());
+        if start.is_err() || end.is_err() {
+            write_error(
+                stream,
+                "ERR invalid arguments for XRANGE: start and end must be integers",
+            );
+            return 3;
+        }
+
+        let (start, end) = (start.unwrap(), end.unwrap());
+
+        let mut _stream_obj: Option<&Stream> = None;
+
+        let map = db.lock().unwrap();
+        if let Some(val) = map.get(stream_key) {
+            if let ValueType::Stream(ref stream) = val {
+                _stream_obj = Some(stream);
+            } else {
+                write_error(
+                    stream,
+                    "WRONGTYPE Operation against a key holding the wrong kind of value",
+                );
+                return 0;
+            }
+        } else {
+            write_null_bulk_string(stream);
+            return 0;
+        };
+
+        if let Some(stream) = _stream_obj {
+            let range = stream.range((start, 0), (end, 0));
+            println!("{range:#?}");
+        }
+
+        3
+    }
+
     fn handle_xadd(
         &self,
         stream: &mut TcpStream,
@@ -662,7 +715,7 @@ impl Runner {
             let global = global_state.lock().unwrap();
             !global.is_master() && *is_propagation
         };
-        if args.len() < 3 {
+        if args.len() < 4 {
             if !is_slave_and_propagation {
                 write_error(stream, "wrong number of arguments for 'XACC'");
             }

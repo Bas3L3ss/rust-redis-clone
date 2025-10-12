@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::structs::entries::Stream;
+use crate::structs::stream::Stream;
 
 pub enum ValueType {
     String(String),
