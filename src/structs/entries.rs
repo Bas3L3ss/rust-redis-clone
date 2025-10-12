@@ -1,4 +1,5 @@
 use crate::enums::add_stream_entries_result::StreamResult;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Stream {
     pub entries: Vec<Entries>,
@@ -13,9 +14,29 @@ impl Stream {
         Stream { entries: vec![] }
     }
 
-    pub fn add_entries(&mut self, id: String, kv: Vec<(String, String)>) -> StreamResult {
-        let mili_sequence_vec: Vec<&str> = id.split('-').collect();
+    pub fn add_entries(&mut self, id: String, _kv: Vec<(String, String)>) -> StreamResult {
+        if id == "*" {
+            let curr_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
 
+            let mut curr_seq = 0;
+            if let Some(last_entry) = self.entries.last() {
+                if last_entry.milisec == curr_ms {
+                    curr_seq = last_entry.sequence_number + 1;
+                }
+            }
+
+            self.entries.push(Entries {
+                milisec: curr_ms,
+                sequence_number: curr_seq,
+            });
+
+            return StreamResult::Some(format!("{curr_ms}-{curr_seq}"));
+        }
+
+        let mili_sequence_vec: Vec<&str> = id.split('-').collect();
         if mili_sequence_vec.len() != 2 {
             return StreamResult::Err("The ID specified in XADD is not valid".to_string());
         }
