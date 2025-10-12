@@ -709,7 +709,7 @@ impl Runner {
             }
         }
         if !is_slave_and_propagation {
-            write_simple_string(stream, &id);
+            write_bulk_string(stream, &id);
             let mut propagation = format!("XADD {}", id);
             for (k, v) in &kv {
                 propagation.push(' ');
