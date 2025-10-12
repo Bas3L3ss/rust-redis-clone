@@ -140,9 +140,11 @@ impl Stream {
     }
 
     pub fn last_entry_id(&self) -> Option<(u64, u64)> {
-        self.entries
-            .last()
-            .map(|entry| (entry.milisec, entry.sequence_number))
+        if let Some(entry) = self.entries.last() {
+            Some((entry.milisec, entry.sequence_number))
+        } else {
+            Some((0, 0))
+        }
     }
 }
 
