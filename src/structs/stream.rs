@@ -32,94 +32,109 @@ impl Stream {
     }
 
     pub fn add_entries(&mut self, id: String, key_val: Vec<(String, String)>) -> StreamResult {
-        const ERR_INVALID_ID: &str = "The ID specified in XADD is not valid";
-        const ERR_NOT_GREATER: &str =
-            "The ID specified in XADD is equal or smaller than the target stream top item";
-        const ERR_MUST_GT_00: &str = "The ID specified in XADD must be greater than 0-0";
-
-        let id_is_star = id == "*";
-        let mut _ms = 0u64;
-        let mut seq = 0u64;
-        let mut gen_seq = false;
-
-        if id_is_star {
-            _ms = SystemTime::now()
+        if id == "*" {
+            let curr_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
 
-            if let Some(last) = self.entries.last() {
-                seq = if last.milisec == _ms {
-                    last.sequence_number + 1
-                } else {
-                    0
-                };
+            let mut curr_seq = 0;
+            if let Some(last_entry) = self.entries.last() {
+                if last_entry.milisec == curr_ms {
+                    curr_seq = last_entry.sequence_number + 1;
+                }
             }
+
             self.entries.push(Entry {
-                milisec: _ms,
-                sequence_number: seq,
+                milisec: curr_ms,
+                sequence_number: curr_seq,
                 key_val,
             });
-            return StreamResult::Some(format!("{_ms}-{seq}"));
+
+            return StreamResult::Some(format!("{curr_ms}-{curr_seq}"));
         }
 
-        let parts: Vec<&str> = id.split('-').collect();
-        if parts.len() != 2 {
-            return StreamResult::Err(ERR_INVALID_ID.to_string());
+        let mili_sequence_vec: Vec<&str> = id.split('-').collect();
+        if mili_sequence_vec.len() != 2 {
+            return StreamResult::Err("The ID specified in XADD is not valid".to_string());
         }
 
-        let ms_parsed = parts[0].parse::<u64>();
-        if ms_parsed.is_err() {
-            return StreamResult::Err(ERR_INVALID_ID.to_string());
-        }
-        _ms = ms_parsed.unwrap();
+        if mili_sequence_vec[1] == "*" {
+            let curr_ms = mili_sequence_vec[0].parse::<u64>();
 
-        if parts[1] == "*" {
-            gen_seq = true;
-        } else {
-            let seq_parsed = parts[1].parse::<u64>();
-            if seq_parsed.is_err() {
-                return StreamResult::Err(ERR_INVALID_ID.to_string());
+            if curr_ms.is_err() {
+                return StreamResult::Err("The ID specified in XADD is not valid".to_string());
             }
-            seq = seq_parsed.unwrap();
-        }
+            let curr_ms = curr_ms.unwrap();
+            let mut curr_seq = 1;
 
-        if !gen_seq {
-            if _ms == 0 && seq == 0 {
-                return StreamResult::Err(ERR_MUST_GT_00.to_string());
-            }
-            if _ms == 0 && seq < 1 {
-                return StreamResult::Err(ERR_MUST_GT_00.to_string());
-            }
-        }
-
-        if let Some(last) = self.entries.last() {
-            if _ms < last.milisec {
-                return StreamResult::Err(ERR_NOT_GREATER.to_string());
-            }
-            if _ms == last.milisec {
-                if gen_seq {
-                    seq = last.sequence_number + 1;
+            if !self.entries.is_empty() {
+                let last_entry = self.entries.last().unwrap();
+                let last_ms = last_entry.milisec;
+                if curr_ms == last_ms {
+                    curr_seq = curr_seq + last_entry.sequence_number;
+                } else {
+                    curr_seq = 0;
                 }
-                if !gen_seq && seq <= last.sequence_number {
-                    return StreamResult::Err(ERR_NOT_GREATER.to_string());
+
+                if curr_ms < last_ms {
+                    return StreamResult::Err(
+                    "The ID specified in XADD is equal or smaller than the target stream top item"
+                        .to_string(),
+                );
                 }
-            } else if gen_seq {
-                seq = 0;
             }
-        } else if gen_seq {
-            seq = 0;
-        }
 
-        self.entries.push(Entry {
-            milisec: _ms,
-            sequence_number: seq,
-            key_val,
-        });
+            self.entries.push(Entry {
+                milisec: curr_ms,
+                sequence_number: curr_seq,
+                key_val,
+            });
 
-        if gen_seq {
-            StreamResult::Some(format!("{_ms}-{seq}"))
+            StreamResult::Some(format!("{curr_ms}-{curr_seq}"))
         } else {
+            let curr_ms = mili_sequence_vec[0].parse::<u64>();
+            let curr_seq = mili_sequence_vec[1].parse::<u64>();
+
+            if curr_ms.is_err() || curr_seq.is_err() {
+                return StreamResult::Err("The ID specified in XADD is not valid".to_string());
+            }
+            let (curr_ms, curr_seq) = (curr_ms.unwrap(), curr_seq.unwrap());
+
+            if curr_ms == 0 && curr_seq == 0 {
+                return StreamResult::Err(
+                    "The ID specified in XADD must be greater than 0-0".to_string(),
+                );
+            }
+            if curr_ms == 0 && curr_seq < 1 {
+                return StreamResult::Err(
+                    "The ID specified in XADD must be greater than 0-0".to_string(),
+                );
+            }
+            if !self.entries.is_empty() {
+                let last_entry = self.entries.last().unwrap();
+                let last_ms = last_entry.milisec;
+                let last_seq = last_entry.sequence_number;
+
+                if curr_ms < last_ms {
+                    return StreamResult::Err(
+                    "The ID specified in XADD is equal or smaller than the target stream top item"
+                        .to_string(),
+                );
+                }
+                if curr_ms == last_ms && curr_seq <= last_seq {
+                    return StreamResult::Err(
+                    "The ID specified in XADD is equal or smaller than the target stream top item"
+                        .to_string(),
+                );
+                }
+            }
+            self.entries.push(Entry {
+                milisec: curr_ms,
+                sequence_number: curr_seq,
+                key_val,
+            });
+
             StreamResult::Some(id)
         }
     }

@@ -729,10 +729,8 @@ impl Runner {
                 }
 
                 let mut resp = String::new();
-                // Outer array: *2\r\n
                 resp.push_str("*2\r\n");
 
-                // First element: id as bulk string
                 resp.push_str(&format!("${}\r\n{}\r\n", id.len(), id));
 
                 // Second element: key-value array
