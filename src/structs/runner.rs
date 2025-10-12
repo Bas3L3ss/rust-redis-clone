@@ -134,7 +134,7 @@ impl Runner {
             }
 
             "xadd" => {
-                self.handle_xadd(
+                self.cur_step += self.handle_xadd(
                     stream,
                     args,
                     db,
@@ -655,7 +655,7 @@ impl Runner {
         global_state: &RedisGlobalType,
         is_propagation: &bool,
         connection: &mut Connection,
-    ) {
+    ) -> usize {
         // TODO: transaction runner and enqueuing
         let is_slave_and_propagation = {
             let global = global_state.lock().unwrap();
@@ -665,7 +665,7 @@ impl Runner {
             if !is_slave_and_propagation {
                 write_error(stream, "wrong number of arguments for 'XACC'");
             }
-            return;
+            return 0;
         }
 
         let stream_key = &args[0];
@@ -708,6 +708,7 @@ impl Runner {
             }
             propagate_slaves(global_state, &propagation);
         }
+        idx
     }
 
     fn handle_set(
@@ -961,7 +962,7 @@ impl Runner {
         }
 
         let key = &args[0];
-        let mut result_value = 0;
+        let mut _result_value = 0;
 
         {
             let mut map = db.lock().unwrap();
@@ -970,7 +971,7 @@ impl Runner {
             if !config_map.contains_key(key) || !map.contains_key(key) {
                 map.insert(key.clone(), ValueType::String("1".to_string()));
                 config_map.insert(key.clone(), Default::default());
-                result_value = 1;
+                _result_value = 1;
             } else {
                 if let Some(cfg) = config_map.get(key) {
                     if cfg.is_expired() {
@@ -996,11 +997,11 @@ impl Runner {
                     }
                 };
                 map.insert(key.clone(), ValueType::String(new_value.to_string()));
-                result_value = new_value;
+                _result_value = new_value;
             }
         }
         if !is_slave_and_propagation {
-            write_integer(stream, result_value);
+            write_integer(stream, _result_value);
         }
         propagate_slaves(
             global_state,
