@@ -47,7 +47,7 @@ impl Stream {
                 sequence_number: curr_seq,
             });
 
-            StreamResult::Some(id)
+            StreamResult::Some(format!("{curr_ms}-{curr_seq}"))
         } else {
             let curr_ms = mili_sequence_vec[0].parse::<u64>();
             let curr_seq = mili_sequence_vec[1].parse::<u64>();
