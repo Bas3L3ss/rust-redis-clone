@@ -32,7 +32,11 @@ impl Stream {
             if !self.entries.is_empty() {
                 let last_entry = self.entries.last().unwrap();
                 let last_ms = last_entry.milisec;
-                curr_seq = curr_seq + last_entry.sequence_number;
+                if curr_ms == last_ms {
+                    curr_seq = curr_seq + last_entry.sequence_number;
+                } else {
+                    curr_seq = 0;
+                }
 
                 if curr_ms < last_ms {
                     return StreamResult::Err(
