@@ -1,3 +1,4 @@
+use crate::enums::add_stream_entries_result::StreamResult;
 use crate::enums::val_type::ValueType;
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
@@ -669,7 +670,7 @@ impl Runner {
         }
 
         let stream_key = &args[0];
-        let id = &args[1];
+        let mut id = args[1].clone();
         let mut kv = Vec::new();
         let mut idx = 2;
         while idx + 1 < args.len() {
@@ -678,7 +679,6 @@ impl Runner {
             kv.push((key, value));
             idx += 2;
         }
-
         {
             let mut map = db.lock().unwrap();
 
@@ -698,16 +698,18 @@ impl Runner {
                 ok
             };
 
-            if let Some(err) = add_result {
-                if !is_slave_and_propagation {
-                    write_error(stream, &err);
+            match add_result {
+                StreamResult::Err(err) => {
+                    if !is_slave_and_propagation {
+                        write_error(stream, &err);
+                    }
+                    return idx;
                 }
-                return idx;
+                StreamResult::Some(new_id) => id = new_id,
             }
         }
-
         if !is_slave_and_propagation {
-            write_simple_string(stream, id);
+            write_simple_string(stream, &id);
             let mut propagation = format!("XADD {}", id);
             for (k, v) in &kv {
                 propagation.push(' ');
