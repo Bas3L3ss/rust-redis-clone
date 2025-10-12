@@ -700,7 +700,7 @@ impl Runner {
 
             if !add_result {
                 if !is_slave_and_propagation {
-                    write_error(stream, "ERR The ID specified in XADD is equal or smaller than the target stream top item");
+                    write_error(stream, "The ID specified in XADD is equal or smaller than the target stream top item");
                 }
                 return idx;
             }
