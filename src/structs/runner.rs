@@ -10,8 +10,10 @@ use crate::utils::{
     is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
     write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
 };
+use std::io::Write;
 use std::net::TcpStream;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::vec;
 
 pub struct Runner {
     pub args: Vec<String>,
@@ -713,10 +715,32 @@ impl Runner {
             return 3;
         };
 
-        if let Some(stream) = _stream_obj {
-            let range = stream.range(start, end);
-            let entries_str: Vec<String> = range.iter().map(|entry| entry.to_string()).collect();
-            println!("{:#?}", format!("[{}]", entries_str.join(", ")))
+        if let Some(redis_stream) = _stream_obj {
+            let range = redis_stream.range(start, end);
+
+            fn encode_to_resp_array(messages: Vec<String>) -> String {
+                let mut resp = format!("*{}\r\n", messages.len());
+                for msg in messages {
+                    resp.push_str(&format!("${}\r\n{}\r\n", msg.len(), msg));
+                }
+                resp
+            }
+
+            let _ = stream.write_all(format!("*{}\r\n", range.len()).as_bytes());
+            for entry in range {
+                let id = format!("{}-{}", entry.milisec, entry.sequence_number);
+
+                let mut keyvals = Vec::with_capacity(entry.key_val.len() * 2);
+                for (k, v) in &entry.key_val {
+                    keyvals.push(k.clone());
+                    keyvals.push(v.clone());
+                }
+                let fields_array = encode_to_resp_array(keyvals);
+
+                let entry_array = encode_to_resp_array(vec![id, fields_array]);
+
+                let _ = stream.write_all(entry_array.as_bytes());
+            }
         }
 
         3
