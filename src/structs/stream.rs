@@ -138,6 +138,12 @@ impl Stream {
             StreamResult::Some(id)
         }
     }
+
+    pub fn last_entry_id(&self) -> Option<(u64, u64)> {
+        self.entries
+            .last()
+            .map(|entry| (entry.milisec, entry.sequence_number))
+    }
 }
 
 impl ToString for Stream {

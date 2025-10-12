@@ -658,15 +658,13 @@ impl Runner {
         _db_config: &DbConfigType,
         _connection: &mut Connection,
     ) -> usize {
-        if args.len() < 3 {
-            write_error(stream, "wrong number of arguments for 'XACC'");
-            return 0;
-        };
-        let stream_key = &args[0];
-
-        fn parse_range(range: &String) -> Option<(u64, u64)> {
+        fn parse_range(range: &String, last_entry_id: Option<(u64, u64)>) -> Option<(u64, u64)> {
             if range == "-" {
                 return Some((0, 0));
+            }
+
+            if range == "+" {
+                return Some(last_entry_id.unwrap());
             }
 
             if range.contains("-") {
@@ -689,16 +687,11 @@ impl Runner {
             }
         }
 
-        let (start, end) = (parse_range(&args[1]), parse_range(&args[2]));
-        if start.is_none() || end.is_none() {
-            write_error(
-                stream,
-                "ERR invalid arguments for XRANGE: start and end must be integers",
-            );
-            return 3;
-        }
-
-        let (start, end) = (start.unwrap(), end.unwrap());
+        if args.len() < 3 {
+            write_error(stream, "wrong number of arguments for 'XACC'");
+            return 0;
+        };
+        let stream_key = &args[0];
 
         let mut _stream_obj: Option<&Stream> = None;
 
@@ -719,6 +712,20 @@ impl Runner {
         };
 
         if let Some(redis_stream) = _stream_obj {
+            let (start, end) = (
+                parse_range(&args[1], None),
+                parse_range(&args[2], redis_stream.last_entry_id()),
+            );
+            if start.is_none() || end.is_none() {
+                write_error(
+                    stream,
+                    "ERR invalid arguments for XRANGE: start and end must be integers",
+                );
+                return 3;
+            }
+
+            let (start, end) = (start.unwrap(), end.unwrap());
+
             let range = redis_stream.range(start, end);
 
             let _ = stream.write_all(format!("*{}\r\n", range.len()).as_bytes());
