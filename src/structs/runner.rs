@@ -651,10 +651,10 @@ impl Runner {
         stream: &mut TcpStream,
         args: &[String],
         db: &DbType,
-        db_config: &DbConfigType,
+        _db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         is_propagation: &bool,
-        connection: &mut Connection,
+        _connection: &mut Connection,
     ) -> usize {
         // TODO: transaction runner and enqueuing
         let is_slave_and_propagation = {
@@ -682,18 +682,27 @@ impl Runner {
         {
             let mut map = db.lock().unwrap();
 
-            if let Some(existing) = map.get_mut(stream_key) {
+            let add_result = if let Some(existing) = map.get_mut(stream_key) {
                 if let ValueType::Stream(ref mut stream_obj) = existing {
-                    stream_obj.add_entries(id.clone(), kv.clone());
+                    stream_obj.add_entries(id.clone(), kv.clone())
                 } else {
                     let mut s = Stream::new();
-                    s.add_entries(id.clone(), kv.clone());
+                    let ok = s.add_entries(id.clone(), kv.clone());
                     map.insert(stream_key.clone(), ValueType::Stream(s));
+                    ok
                 }
             } else {
                 let mut s = Stream::new();
-                s.add_entries(id.clone(), kv.clone());
+                let ok = s.add_entries(id.clone(), kv.clone());
                 map.insert(stream_key.clone(), ValueType::Stream(s));
+                ok
+            };
+
+            if !add_result {
+                if !is_slave_and_propagation {
+                    write_error(stream, "ERR The ID specified in XADD is equal or smaller than the target stream top item");
+                }
+                return idx;
             }
         }
 
