@@ -718,36 +718,33 @@ impl Runner {
         if let Some(redis_stream) = _stream_obj {
             let range = redis_stream.range(start, end);
 
-            fn encode_to_resp_array(messages: Vec<String>) -> String {
-                let mut resp = format!("*{}\r\n", messages.len());
-                for msg in messages {
-                    resp.push_str(&format!("${}\r\n{}\r\n", msg.len(), msg));
-                }
-                resp
-            }
-
             let _ = stream.write_all(format!("*{}\r\n", range.len()).as_bytes());
             for entry in range {
                 let id = format!("{}-{}", entry.milisec, entry.sequence_number);
 
-                let mut keyvals = Vec::with_capacity(entry.key_val.len() * 2);
+                let mut fields = Vec::with_capacity(entry.key_val.len());
                 for (k, v) in &entry.key_val {
-                    keyvals.push(k.clone());
-                    keyvals.push(v.clone());
-                }
-                // Instead of encoding keyvals as a RESP array string, we want a nested RESP array (not string).
-                // So, we'll serialize keyvals as a proper multi-bulk reply per RESP.
-                let mut fields_array = format!("*{}\r\n", keyvals.len());
-                for field in keyvals {
-                    fields_array.push_str(&format!("${}\r\n{}\r\n", field.len(), field));
+                    fields.push(k.clone());
+                    fields.push(v.clone());
                 }
 
-                let entry_array = encode_to_resp_array(vec![id, fields_array]);
+                let mut resp = String::new();
+                // Outer array: *2\r\n
+                resp.push_str("*2\r\n");
 
-                let _ = stream.write_all(entry_array.as_bytes());
+                // First element: id as bulk string
+                resp.push_str(&format!("${}\r\n{}\r\n", id.len(), id));
+
+                // Second element: key-value array
+                resp.push_str(&format!("*{}\r\n", entry.key_val.len() * 2));
+                for (k, v) in &entry.key_val {
+                    resp.push_str(&format!("${}\r\n{}\r\n", k.len(), k));
+                    resp.push_str(&format!("${}\r\n{}\r\n", v.len(), v));
+                }
+
+                let _ = stream.write_all(resp.as_bytes());
             }
         }
-
         3
     }
 
