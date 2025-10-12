@@ -11,28 +11,27 @@ impl Stream {
         Stream { entries: vec![] }
     }
 
-    pub fn add_entries(&mut self, id: String, kv: Vec<(String, String)>) -> bool {
+    pub fn add_entries(&mut self, id: String, kv: Vec<(String, String)>) -> Option<String> {
         let mili_sequence_vec: Vec<&str> = id.split('-').collect();
 
         if mili_sequence_vec.len() != 2 {
-            return false;
+            return Some("The ID specified in XADD is not valid".to_string());
         }
 
         let curr_ms = mili_sequence_vec[0].parse::<u64>();
         let curr_seq = mili_sequence_vec[1].parse::<u64>();
 
         if curr_ms.is_err() || curr_seq.is_err() {
-            return false;
+            return Some("The ID specified in XADD is not valid".to_string());
         }
         let (curr_ms, curr_seq) = (curr_ms.unwrap(), curr_seq.unwrap());
 
         if self.entries.is_empty() {
-            // Initial entry, check rules
             if curr_ms == 0 && curr_seq == 0 {
-                return false;
+                return Some("The ID specified in XADD must be greater than 0-0".to_string());
             }
             if curr_ms == 0 && curr_seq < 1 {
-                return false;
+                return Some("The ID specified in XADD must be greater than 0-0".to_string());
             }
         } else {
             let last_entry = self.entries.last().unwrap();
@@ -40,10 +39,16 @@ impl Stream {
             let last_seq = last_entry.sequence_number;
 
             if curr_ms < last_ms {
-                return false;
+                return Some(
+                    "The ID specified in XADD is equal or smaller than the target stream top item"
+                        .to_string(),
+                );
             }
             if curr_ms == last_ms && curr_seq <= last_seq {
-                return false;
+                return Some(
+                    "The ID specified in XADD is equal or smaller than the target stream top item"
+                        .to_string(),
+                );
             }
         }
 
@@ -51,7 +56,7 @@ impl Stream {
             sequence_number: curr_seq,
             milisec: curr_ms,
         });
-        true
+        None
     }
 }
 

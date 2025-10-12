@@ -698,9 +698,9 @@ impl Runner {
                 ok
             };
 
-            if !add_result {
+            if let Some(err) = add_result {
                 if !is_slave_and_propagation {
-                    write_error(stream, "The ID specified in XADD is equal or smaller than the target stream top item");
+                    write_error(stream, &err);
                 }
                 return idx;
             }
