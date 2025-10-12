@@ -715,7 +715,8 @@ impl Runner {
 
         if let Some(stream) = _stream_obj {
             let range = stream.range(start, end);
-            println!("{range:#?}");
+            let entries_str: Vec<String> = range.iter().map(|entry| entry.to_string()).collect();
+            println!("{}", format!("[{}]", entries_str.join(", ")))
         }
 
         3

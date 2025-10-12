@@ -134,6 +134,16 @@ impl ToString for Stream {
 
 impl ToString for Entry {
     fn to_string(&self) -> String {
-        format!("{}-{}", self.milisec, self.sequence_number)
+        let mut keyvals = Vec::new();
+        for (k, v) in &self.key_val {
+            keyvals.push(k.clone());
+            keyvals.push(v.clone());
+        }
+        format!(
+            "{}-{} [{}]",
+            self.milisec,
+            self.sequence_number,
+            keyvals.join(", ")
+        )
     }
 }
