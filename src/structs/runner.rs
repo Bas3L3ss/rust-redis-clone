@@ -735,7 +735,12 @@ impl Runner {
                     keyvals.push(k.clone());
                     keyvals.push(v.clone());
                 }
-                let fields_array = encode_to_resp_array(keyvals);
+                // Instead of encoding keyvals as a RESP array string, we want a nested RESP array (not string).
+                // So, we'll serialize keyvals as a proper multi-bulk reply per RESP.
+                let mut fields_array = format!("*{}\r\n", keyvals.len());
+                for field in keyvals {
+                    fields_array.push_str(&format!("${}\r\n{}\r\n", field.len(), field));
+                }
 
                 let entry_array = encode_to_resp_array(vec![id, fields_array]);
 
