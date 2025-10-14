@@ -690,7 +690,8 @@ impl Runner {
                 if start_time.elapsed() >= block_duration {
                     println!("NOT FOUND");
 
-                    write_null_bulk_string(stream);
+                    let _ = stream.write_all(format!("*{}\r\n", 0).as_bytes());
+
                     return consumed;
                 }
 
