@@ -688,6 +688,8 @@ impl Runner {
                 }
 
                 if start_time.elapsed() >= block_duration {
+                    println!("NOT FOUND");
+
                     write_null_bulk_string(stream);
                     return xread_config.streams.len();
                 }
