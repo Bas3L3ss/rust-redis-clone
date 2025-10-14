@@ -691,7 +691,7 @@ impl Runner {
                     println!("NOT FOUND");
 
                     write_null_bulk_string(stream);
-                    return xread_config.streams.len();
+                    return consumed;
                 }
 
                 sleep(Duration::from_millis(10));
