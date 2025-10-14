@@ -689,7 +689,7 @@ impl Runner {
 
                 if start_time.elapsed() >= block_duration {
                     println!("NOT FOUND");
-                    let _ = stream.write_all(b"*0\r\n");
+                    let _ = stream.write_all(b"*-1\r\n");
                     return consumed;
                 }
 
