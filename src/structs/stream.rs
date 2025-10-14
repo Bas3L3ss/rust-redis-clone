@@ -32,10 +32,13 @@ impl Stream {
     }
 
     pub fn range_start(&self, start: (u64, u64)) -> Vec<&Entry> {
-        let start_idx = self
+        let start_idx = match self
             .entries
             .binary_search_by(|e| (e.milisec, e.sequence_number).cmp(&start))
-            .unwrap_or_else(|x| x);
+        {
+            Ok(i) => i + 1, // skip the matched ID
+            Err(i) => i,    // start from the next greater one
+        };
 
         self.entries[start_idx..].iter().collect()
     }
