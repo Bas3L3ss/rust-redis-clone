@@ -13,6 +13,7 @@ use crate::utils::{
 };
 use std::io::Write;
 use std::net::TcpStream;
+use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct Runner {
@@ -660,7 +661,39 @@ impl Runner {
             return consumed;
         }
 
-        if let Some(_block) = xread_config.block {}
+        if let Some(block) = xread_config.block {
+            let start_time = Instant::now();
+            let block_duration = Duration::from_millis(block as u64);
+
+            loop {
+                let mut found_entries = false;
+
+                for (key, range) in &xread_config.streams {
+                    let db_guard = db.lock().unwrap();
+                    if let Some(ValueType::Stream(redis_stream)) = db_guard.get(key) {
+                        let range_opt = parse_range(range, None);
+                        if let Some(start_range) = range_opt {
+                            let entries = redis_stream.range_start(start_range);
+                            if !entries.is_empty() {
+                                found_entries = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if found_entries {
+                    break;
+                }
+
+                if start_time.elapsed() >= block_duration {
+                    write_error(stream, "No new stream entries within BLOCK timeout.");
+                    return xread_config.streams.len();
+                }
+
+                sleep(Duration::from_millis(10));
+            }
+        }
 
         if let Some(_count) = xread_config.count {}
 
@@ -669,7 +702,6 @@ impl Runner {
             return consumed;
         }
 
-        // Top-level array, one item per stream
         let _ = stream.write_all(format!("*{}\r\n", xread_config.streams.len()).as_bytes());
 
         for (key, range) in xread_config.streams {
