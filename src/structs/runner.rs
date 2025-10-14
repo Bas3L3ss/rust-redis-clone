@@ -5,6 +5,7 @@ use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
 use crate::structs::stream::Stream;
 use crate::structs::transaction_runner::TransactionRunner;
+use crate::structs::xread_config::XreadConfig;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
     is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
@@ -135,18 +136,14 @@ impl Runner {
                 self.handle_multi(stream, connection);
             }
             "xadd" => {
-                self.cur_step += self.handle_xadd(
-                    stream,
-                    args,
-                    db,
-                    db_config,
-                    global_state,
-                    &is_propagation,
-                    connection,
-                );
+                self.cur_step +=
+                    self.handle_xadd(stream, args, db, global_state, &is_propagation, connection);
             }
             "xrange" => {
-                self.cur_step += self.handle_xrange(stream, args, db, db_config, connection);
+                self.cur_step += self.handle_xrange(stream, args, db, connection);
+            }
+            "xread" => {
+                self.cur_step += self.handle_xread(stream, args, db, connection);
             }
             "discard" => {
                 self.handle_discard(stream, connection);
@@ -650,12 +647,37 @@ impl Runner {
         1
     }
 
+    fn handle_xread(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: ENQUEUE AND TRANSCTION
+        let (xread_config, consumed, err) = XreadConfig::from_args(&args);
+        println!("{xread_config:#?}");
+        if let Some(e) = err {
+            write_error(stream, &e);
+            return consumed;
+        }
+        if let Some(block) = xread_config.block {}
+
+        if let Some(count) = xread_config.count {}
+
+        if xread_config.streams.is_empty() {
+            write_error(stream, "no streams specified for XREAD");
+            return consumed;
+        }
+
+        consumed
+    }
+
     fn handle_xrange(
         &self,
         stream: &mut TcpStream,
         args: &[String],
         db: &DbType,
-        _db_config: &DbConfigType,
         _connection: &mut Connection,
     ) -> usize {
         fn parse_range(range: &String, last_entry_id: Option<(u64, u64)>) -> Option<(u64, u64)> {
@@ -719,7 +741,7 @@ impl Runner {
             if start.is_none() || end.is_none() {
                 write_error(
                     stream,
-                    "ERR invalid arguments for XRANGE: start and end must be integers",
+                    "invalid arguments for XRANGE: start and end must be integers",
                 );
                 return 3;
             }
@@ -761,7 +783,6 @@ impl Runner {
         stream: &mut TcpStream,
         args: &[String],
         db: &DbType,
-        _db_config: &DbConfigType,
         global_state: &RedisGlobalType,
         is_propagation: &bool,
         _connection: &mut Connection,
