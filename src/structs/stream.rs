@@ -31,6 +31,15 @@ impl Stream {
         self.entries[start_idx..=end_idx].iter().collect()
     }
 
+    pub fn range_start(&self, start: (u64, u64)) -> Vec<&Entry> {
+        let start_idx = self
+            .entries
+            .binary_search_by(|e| (e.milisec, e.sequence_number).cmp(&start))
+            .unwrap_or_else(|x| x);
+
+        self.entries[start_idx..].iter().collect()
+    }
+
     pub fn add_entries(&mut self, id: String, key_val: Vec<(String, String)>) -> StreamResult {
         if id == "*" {
             let curr_ms = SystemTime::now()

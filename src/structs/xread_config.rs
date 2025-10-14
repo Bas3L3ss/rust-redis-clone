@@ -49,36 +49,21 @@ impl XreadConfig {
                 "streams" => {
                     found_streams = true;
                     i += 1;
-                    let mut stream_keys: Vec<String> = Vec::new();
-                    while i < args.len()
-                        && !["count", "block"].contains(&args[i].to_ascii_lowercase().as_str())
-                    {
-                        if args[i].to_ascii_lowercase() == "streams" {
-                            break;
-                        }
 
-                        stream_keys.push(args[i].clone());
-                        i += 1;
-                    }
-                    let ids_start = i;
-                    let ids_num = stream_keys.len();
-                    if ids_num == 0 || args.len() < ids_start + ids_num {
-                        err = Some(
-                            "STREAMS must be followed by keys and their corresponding IDs"
-                                .to_string(),
-                        );
+                    let remaining = args.len() - i;
+                    if remaining == 0 || remaining % 2 != 0 {
+                        err = Some("Missing ids for keys".to_string());
                         break;
                     }
-                    for (ix, key) in stream_keys.into_iter().enumerate() {
-                        let id_idx = ids_start + ix;
-                        if id_idx >= args.len() {
-                            err = Some("Missing ID for stream".to_string());
-                            break;
-                        }
-                        let id = args[id_idx].clone();
+
+                    let mid = i + remaining / 2;
+                    for j in 0..(remaining / 2) {
+                        let key = args[i + j].clone();
+                        let id = args[mid + j].clone();
                         streams.push((key, id));
                     }
-                    i = ids_start + ids_num;
+
+                    i += remaining;
                     break;
                 }
                 _ => {

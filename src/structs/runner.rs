@@ -8,8 +8,8 @@ use crate::structs::transaction_runner::TransactionRunner;
 use crate::structs::xread_config::XreadConfig;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, propagate_slaves, write_array, write_bulk_string, write_error, write_integer,
-    write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
+    is_matched, parse_range, propagate_slaves, write_array, write_bulk_string, write_error,
+    write_integer, write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
 };
 use std::io::Write;
 use std::net::TcpStream;
@@ -654,20 +654,62 @@ impl Runner {
         db: &DbType,
         _connection: &mut Connection,
     ) -> usize {
-        // TODO: ENQUEUE AND TRANSCTION
         let (xread_config, consumed, err) = XreadConfig::from_args(&args);
-        println!("{xread_config:#?}");
         if let Some(e) = err {
             write_error(stream, &e);
             return consumed;
         }
-        if let Some(block) = xread_config.block {}
 
-        if let Some(count) = xread_config.count {}
+        if let Some(_block) = xread_config.block {}
+
+        if let Some(_count) = xread_config.count {}
 
         if xread_config.streams.is_empty() {
             write_error(stream, "no streams specified for XREAD");
             return consumed;
+        }
+
+        // Top-level array, one item per stream
+        let _ = stream.write_all(format!("*{}\r\n", xread_config.streams.len()).as_bytes());
+
+        for (key, range) in xread_config.streams {
+            let db_guard = db.lock().unwrap();
+            if let Some(ValueType::Stream(redis_stream)) = db_guard.get(&key) {
+                let range_opt = parse_range(&range, None);
+
+                if range_opt.is_none() {
+                    write_error(stream, "not valid id");
+                    continue;
+                }
+
+                let start_range = range_opt.unwrap();
+                let entries = redis_stream.range_start(start_range);
+
+                let _ = stream.write_all(b"*2\r\n");
+                let _ = stream.write_all(format!("${}\r\n{}\r\n", key.len(), key).as_bytes());
+
+                let _ = stream.write_all(format!("*{}\r\n", entries.len()).as_bytes());
+
+                for entry in entries {
+                    let entry_id = format!("{}-{}", entry.milisec, entry.sequence_number);
+
+                    let _ = stream.write_all(b"*2\r\n");
+                    let _ = stream
+                        .write_all(format!("${}\r\n{}\r\n", entry_id.len(), entry_id).as_bytes());
+
+                    let _ =
+                        stream.write_all(format!("*{}\r\n", entry.key_val.len() * 2).as_bytes());
+
+                    for (field, value) in &entry.key_val {
+                        let _ = stream
+                            .write_all(format!("${}\r\n{}\r\n", field.len(), field).as_bytes());
+                        let _ = stream
+                            .write_all(format!("${}\r\n{}\r\n", value.len(), value).as_bytes());
+                    }
+                }
+            } else {
+                write_error(stream, "stream not found or not of type 'stream'");
+            }
         }
 
         consumed
@@ -680,35 +722,6 @@ impl Runner {
         db: &DbType,
         _connection: &mut Connection,
     ) -> usize {
-        fn parse_range(range: &String, last_entry_id: Option<(u64, u64)>) -> Option<(u64, u64)> {
-            if range == "-" {
-                return Some((0, 0));
-            }
-
-            if range == "+" {
-                return Some(last_entry_id.unwrap());
-            }
-
-            if range.contains("-") {
-                let parts: Vec<&str> = range.split('-').collect();
-                if parts.len() == 2 {
-                    if let (Ok(ms), Ok(seq)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
-                        return Some((ms, seq));
-                    } else {
-                        return None;
-                    }
-                } else {
-                    return None;
-                }
-            } else {
-                if let Ok(ms) = range.parse::<u64>() {
-                    return Some((ms, 0));
-                } else {
-                    return None;
-                }
-            }
-        }
-
         if args.len() < 3 {
             write_error(stream, "wrong number of arguments for 'XACC'");
             return 0;

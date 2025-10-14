@@ -422,3 +422,32 @@ pub fn update_replica_offsets(global_state: &RedisGlobalType) {
         }
     }
 }
+
+pub fn parse_range(range: &String, last_entry_id: Option<(u64, u64)>) -> Option<(u64, u64)> {
+    if range == "-" {
+        return Some((0, 0));
+    }
+
+    if range == "+" {
+        return Some(last_entry_id.unwrap());
+    }
+
+    if range.contains("-") {
+        let parts: Vec<&str> = range.split('-').collect();
+        if parts.len() == 2 {
+            if let (Ok(ms), Ok(seq)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                return Some((ms, seq));
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    } else {
+        if let Ok(ms) = range.parse::<u64>() {
+            return Some((ms, 0));
+        } else {
+            return None;
+        }
+    }
+}
