@@ -683,11 +683,12 @@ impl Runner {
                 }
 
                 if found_entries {
+                    println!("FOUND!!!!!!!!!!");
                     break;
                 }
 
                 if start_time.elapsed() >= block_duration {
-                    write_error(stream, "No new stream entries within BLOCK timeout.");
+                    write_null_bulk_string(stream);
                     return xread_config.streams.len();
                 }
 
