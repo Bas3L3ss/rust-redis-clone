@@ -218,9 +218,13 @@ impl Runner {
 
         let list_key = &args[0];
         let mut count = 1;
+        let mut has_count = false;
         if args.len() >= 2 {
             match args[1].parse::<usize>() {
-                Ok(val) if val > 0 => count = val,
+                Ok(val) if val > 0 => {
+                    count = val;
+                    has_count = true;
+                }
                 _ => {
                     if !is_slave_and_propagation {
                         write_error(stream, "ERR value is not an integer or out of range");
@@ -229,7 +233,7 @@ impl Runner {
                 }
             }
         }
-        println!("{count}");
+        let consumed = if has_count { 2 } else { 1 };
 
         let mut map = db.lock().unwrap();
         if let Some(val) = map.get_mut(list_key) {
@@ -264,7 +268,7 @@ impl Runner {
                         };
                         propagate_slaves(global_state, &propagation);
                     }
-                    return 1;
+                    return consumed;
                 } else {
                     if !is_slave_and_propagation {
                         if count == 1 {
@@ -281,7 +285,7 @@ impl Runner {
                         };
                         propagate_slaves(global_state, &propagation);
                     }
-                    return 1;
+                    return consumed;
                 }
             } else {
                 if !is_slave_and_propagation {
@@ -290,7 +294,7 @@ impl Runner {
                         "WRONGTYPE Operation against a key holding the wrong kind of value",
                     );
                 }
-                return 0;
+                return consumed;
             }
         }
 
@@ -307,7 +311,7 @@ impl Runner {
             };
             propagate_slaves(global_state, &propagation);
         }
-        1
+        consumed
     }
 
     fn handle_llen(
