@@ -201,7 +201,7 @@ impl Runner {
         let list_key = &args[0];
         let mut consumed = 1;
         let mut val_vec: Vec<String> = vec![];
-        for idx in 1..args.len() - 1 {
+        for idx in 1..args.len() {
             val_vec.push(args[idx].clone());
             consumed += 1;
         }
