@@ -696,6 +696,7 @@ impl Runner {
                                 if let Some(ValueType::Stream(redis_stream)) = db_guard.get(key) {
                                     if redis_stream.entries.len() > *latest_num {
                                         let new_range = redis_stream.last_entry_id().unwrap();
+                                        println!("{new_range:#?}");
                                         *range = format!("{}-{}", new_range.0, new_range.1);
                                         found_entries = true;
                                         break;
