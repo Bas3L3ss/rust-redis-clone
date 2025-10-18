@@ -656,7 +656,7 @@ impl Runner {
         db: &DbType,
         _connection: &mut Connection,
     ) -> usize {
-        let (xread_config, consumed, err) = XreadConfig::from_args(&args);
+        let (mut xread_config, consumed, err) = XreadConfig::from_args(&args);
         if let Some(e) = err {
             write_error(stream, &e);
             return consumed;
@@ -688,13 +688,15 @@ impl Runner {
             loop {
                 let mut found_entries = false;
 
-                for (key, range) in &xread_config.streams {
+                for (key, range) in &mut xread_config.streams {
                     let db_guard = db.lock().unwrap();
                     if let Some(ValueType::Stream(redis_stream)) = db_guard.get(key) {
                         if range == "$" {
                             if let Some(latest_num) = latest_snapshot.get(key) {
                                 if let Some(ValueType::Stream(redis_stream)) = db_guard.get(key) {
                                     if redis_stream.entries.len() > *latest_num {
+                                        let new_range = redis_stream.last_entry_id().unwrap();
+                                        *range = format!("{}-{}", new_range.0, new_range.1);
                                         found_entries = true;
                                         break;
                                     }
