@@ -174,6 +174,11 @@ impl Runner {
                     self.handle_lpop(stream, args, db, global_state, &is_propagation, connection);
             }
 
+            "blpop" => {
+                self.cur_step +=
+                    self.handle_blpop(stream, args, db, global_state, &is_propagation, connection);
+            }
+
             "llen" => {
                 self.cur_step += self.handle_llen(stream, args, db, connection);
             }
@@ -191,6 +196,85 @@ impl Runner {
 
             _ => {
                 write_error(stream, "unknown command");
+            }
+        }
+    }
+
+    fn handle_blpop(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+
+        if args.len() < 2 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'BLPOP'");
+            }
+            return 0;
+        }
+
+        let list_key = &args[0];
+        let timeout = match args[1].parse::<u64>() {
+            Ok(t) => t,
+            _ => {
+                write_error(
+                    stream,
+                    "invalid arguments for BLPOP: timeout must be an integer",
+                );
+                return 2;
+            }
+        };
+
+        let start_time = Instant::now();
+        loop {
+            {
+                let mut map = db.lock().unwrap();
+                if let Some(val) = map.get_mut(list_key) {
+                    if let ValueType::List(ref mut redis_list) = val {
+                        if !redis_list.is_empty() {
+                            let popped = redis_list.remove(0);
+                            if !is_slave_and_propagation {
+                                write_array(
+                                    stream,
+                                    &[Some(list_key.as_str()), Some(popped.as_str())],
+                                );
+                                propagate_slaves(global_state, &format!("LPOP {}", list_key));
+                                return 2;
+                            }
+                        }
+                    } else {
+                        if !is_slave_and_propagation {
+                            write_error(
+                                stream,
+                                "WRONGTYPE Operation against a key holding the wrong kind of value",
+                            );
+                        }
+
+                        return 2;
+                    }
+                }
+            }
+
+            if timeout > 0 {
+                let elapsed = start_time.elapsed();
+                if elapsed >= Duration::from_secs(timeout) {
+                    let _ = stream.write_all(b"*-1\r\n");
+                    return 2;
+                }
+                sleep(Duration::from_millis(10));
+                continue;
+            } else {
+                sleep(Duration::from_millis(10));
+                continue;
             }
         }
     }
