@@ -353,7 +353,6 @@ impl Runner {
             val_vec.push(args[idx].clone());
             consumed += 1;
         }
-        val_vec.reverse();
         let mut len = val_vec.len();
 
         {
@@ -365,9 +364,11 @@ impl Runner {
                     }
                     len = redis_list.len();
                 } else {
+                    val_vec.reverse();
                     map.insert(list_key.clone(), ValueType::List(val_vec.clone()));
                 }
             } else {
+                val_vec.reverse();
                 map.insert(list_key.clone(), ValueType::List(val_vec.clone()));
             }
         }
