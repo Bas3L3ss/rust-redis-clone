@@ -217,22 +217,68 @@ impl Runner {
         }
 
         let list_key = &args[0];
+        let mut count = 1;
+        if args.len() >= 2 {
+            match args[1].parse::<usize>() {
+                Ok(val) if val > 0 => count = val,
+                _ => {
+                    if !is_slave_and_propagation {
+                        write_error(stream, "ERR value is not an integer or out of range");
+                    }
+                    return 0;
+                }
+            }
+        }
 
         let mut map = db.lock().unwrap();
         if let Some(val) = map.get_mut(list_key) {
             if let ValueType::List(ref mut redis_list) = val {
                 if !redis_list.is_empty() {
-                    let pop_elem = redis_list.remove(0);
+                    let remove_count = count.min(redis_list.len());
+                    let mut removed_elems = Vec::with_capacity(remove_count);
+                    for _ in 0..remove_count {
+                        removed_elems.push(redis_list.remove(0));
+                    }
                     if !is_slave_and_propagation {
-                        write_bulk_string(stream, &pop_elem);
+                        if count == 1 {
+                            if !removed_elems.is_empty() {
+                                write_bulk_string(stream, &removed_elems[0]);
+                            } else {
+                                write_null_bulk_string(stream);
+                            }
+                        } else {
+                            let arr: Vec<Option<&str>> =
+                                removed_elems.iter().map(|s| Some(s.as_str())).collect();
+                            write_array(stream, &arr);
+                        }
                     }
                     if redis_list.is_empty() {
                         map.remove(list_key);
                     }
+                    if !is_slave_and_propagation {
+                        let propagation = if args.len() >= 2 {
+                            format!("LPOP {} {}", list_key, count)
+                        } else {
+                            format!("LPOP {}", list_key)
+                        };
+                        propagate_slaves(global_state, &propagation);
+                    }
                     return 1;
                 } else {
                     if !is_slave_and_propagation {
-                        write_null_bulk_string(stream);
+                        if count == 1 {
+                            write_null_bulk_string(stream);
+                        } else {
+                            write_array::<&str>(stream, &[]);
+                        }
+                    }
+                    if !is_slave_and_propagation {
+                        let propagation = if args.len() >= 2 {
+                            format!("LPOP {} {}", list_key, count)
+                        } else {
+                            format!("LPOP {}", list_key)
+                        };
+                        propagate_slaves(global_state, &propagation);
                     }
                     return 1;
                 }
@@ -248,8 +294,16 @@ impl Runner {
         }
 
         if !is_slave_and_propagation {
-            write_null_bulk_string(stream);
-            let propagation = format!("LPOP {}", list_key);
+            if count == 1 {
+                write_null_bulk_string(stream);
+            } else {
+                write_array::<&str>(stream, &[]);
+            }
+            let propagation = if args.len() >= 2 {
+                format!("LPOP {} {}", list_key, count)
+            } else {
+                format!("LPOP {}", list_key)
+            };
             propagate_slaves(global_state, &propagation);
         }
         1
