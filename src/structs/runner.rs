@@ -361,7 +361,7 @@ impl Runner {
             if let Some(val_ref) = map.get_mut(list_key) {
                 if let ValueType::List(ref mut redis_list) = val_ref {
                     for val in &val_vec {
-                        redis_list.push(val.clone());
+                        redis_list.insert(0, val.clone());
                     }
                     len = redis_list.len();
                 } else {
