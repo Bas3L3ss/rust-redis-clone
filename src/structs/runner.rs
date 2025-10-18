@@ -164,6 +164,10 @@ impl Runner {
                     self.handle_rpush(stream, args, db, global_state, &is_propagation, connection);
             }
 
+            "lrange" => {
+                self.cur_step += self.handle_lrange(stream, args, db, connection);
+            }
+
             "command" | "docs" => {
                 if connection.transaction.is_txing {
                     write_simple_string(stream, "QUEUED");
@@ -175,6 +179,89 @@ impl Runner {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_lrange(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        if args.len() < 3 {
+            write_error(stream, "wrong number of arguments for 'LRANGE'");
+            return 0;
+        };
+        let stream_key = &args[0];
+
+        let mut _list: Option<&Vec<String>> = None;
+
+        let map = db.lock().unwrap();
+        if let Some(val) = map.get(stream_key) {
+            if let ValueType::List(ref redis_list) = val {
+                _list = Some(redis_list);
+            } else {
+                write_error(
+                    stream,
+                    "WRONGTYPE Operation against a key holding the wrong kind of value",
+                );
+                return 3;
+            }
+        } else {
+            write_null_bulk_string(stream);
+            return 3;
+        };
+
+        if let Some(redis_list) = _list {
+            let (start, end) = (args[1].parse::<i64>(), args[2].parse::<i64>());
+            if start.is_err() || end.is_err() {
+                write_error(
+                    stream,
+                    "invalid arguments for LRANGE: start and end must be integers",
+                );
+                return 3;
+            }
+
+            let (start, end) = (start.unwrap(), end.unwrap());
+            let start = if start < 0 {
+                let idx = redis_list.len() as i64 + start;
+                if idx < 0 {
+                    0
+                } else {
+                    idx as usize
+                }
+            } else {
+                start as usize
+            };
+
+            let mut end = if end < 0 {
+                let idx = redis_list.len() as i64 + end;
+                if idx < 0 {
+                    0
+                } else {
+                    idx as usize
+                }
+            } else {
+                end as usize
+            };
+
+            end = if end >= redis_list.len() {
+                redis_list.len()
+            } else {
+                end + 1
+            };
+
+            if start > end || start >= redis_list.len() {
+                write_array::<&str>(stream, &[]);
+            } else {
+                let result: Vec<Option<&str>> = redis_list[start..end]
+                    .iter()
+                    .map(|s| Some(s.as_str()))
+                    .collect();
+                write_array(stream, &result);
+            }
+        }
+        3
     }
 
     fn handle_rpush(
