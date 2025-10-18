@@ -695,8 +695,6 @@ impl Runner {
                             if let Some(latest_num) = latest_snapshot.get(key) {
                                 if let Some(ValueType::Stream(redis_stream)) = db_guard.get(key) {
                                     if redis_stream.entries.len() > *latest_num {
-                                        let new_range = redis_stream.last_entry_id().unwrap();
-                                        *range = format!("{}-{}", new_range.0, new_range.1);
                                         found_entries = true;
                                         break;
                                     }
@@ -743,7 +741,7 @@ impl Runner {
         for (key, range) in xread_config.streams {
             let db_guard = db.lock().unwrap();
             if let Some(ValueType::Stream(redis_stream)) = db_guard.get(&key) {
-                let range_opt = parse_range(&range, None);
+                let range_opt = parse_range(&range, redis_stream.last_entry_id());
 
                 if range_opt.is_none() {
                     write_error(stream, "not valid id");

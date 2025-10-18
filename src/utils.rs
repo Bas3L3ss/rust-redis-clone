@@ -428,7 +428,7 @@ pub fn parse_range(range: &String, last_entry_id: Option<(u64, u64)>) -> Option<
         return Some((0, 0));
     }
 
-    if range == "+" {
+    if range == "+" || range == "$" {
         return Some(last_entry_id.unwrap());
     }
 
