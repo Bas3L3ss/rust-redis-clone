@@ -36,8 +36,8 @@ impl Stream {
             .entries
             .binary_search_by(|e| (e.milisec, e.sequence_number).cmp(&start))
         {
-            Ok(i) => i + 1, // skip the matched ID
-            Err(i) => i,    // start from the next greater one
+            Ok(i) => i,  // skip the matched ID
+            Err(i) => i, // start from the next greater one
         };
 
         self.entries[start_idx..].iter().collect()
