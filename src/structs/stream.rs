@@ -32,6 +32,7 @@ impl Stream {
     }
 
     pub fn range_start(&self, start: (u64, u64)) -> Vec<&Entry> {
+        println!("{start:#?}");
         let start_idx = match self
             .entries
             .binary_search_by(|e| (e.milisec, e.sequence_number).cmp(&start))
