@@ -11,6 +11,7 @@ use crate::utils::{
     is_matched, parse_range, propagate_slaves, write_array, write_bulk_string, write_error,
     write_integer, write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
 };
+use std::collections::HashMap;
 use std::io::Write;
 use std::net::TcpStream;
 use std::thread::sleep;
@@ -665,32 +666,61 @@ impl Runner {
             let start_time = Instant::now();
             let block_duration = Duration::from_millis(block as u64);
 
+            let latest_snapshot = {
+                let db_guard = db.lock().unwrap();
+                let map: HashMap<_, _> = xread_config
+                    .streams
+                    .iter()
+                    .filter_map(|(key, _)| {
+                        db_guard.get(key).and_then(|val| {
+                            if let ValueType::Stream(redis_stream) = val {
+                                Some((key.clone(), redis_stream.entries.len()))
+                            } else {
+                                Some((key.clone(), 0))
+                            }
+                        })
+                    })
+                    .collect();
+
+                map
+            };
+
             loop {
                 let mut found_entries = false;
 
                 for (key, range) in &xread_config.streams {
                     let db_guard = db.lock().unwrap();
                     if let Some(ValueType::Stream(redis_stream)) = db_guard.get(key) {
-                        let range_opt = parse_range(range, None);
-                        if let Some(start_range) = range_opt {
-                            let entries = redis_stream.range_start(start_range);
-                            if !entries.is_empty() {
-                                found_entries = true;
-                                break;
+                        if range == "$" {
+                            if let Some(latest_num) = latest_snapshot.get(key) {
+                                if let Some(ValueType::Stream(redis_stream)) = db_guard.get(key) {
+                                    if redis_stream.entries.len() > *latest_num {
+                                        found_entries = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            let range_opt = parse_range(range, None);
+
+                            if let Some(start_range) = range_opt {
+                                let entries = redis_stream.range_start(start_range);
+                                if !entries.is_empty() {
+                                    found_entries = true;
+                                    break;
+                                }
                             }
                         }
                     }
                 }
 
                 if found_entries {
-                    println!("FOUND!!!!!!!!!!");
                     break;
                 }
 
                 if block_duration != Duration::from_millis(0)
                     && start_time.elapsed() >= block_duration
                 {
-                    println!("NOT FOUND");
                     let _ = stream.write_all(b"*-1\r\n");
                     return consumed;
                 }
