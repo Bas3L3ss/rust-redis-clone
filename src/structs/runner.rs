@@ -704,7 +704,7 @@ impl Runner {
                             let range_opt = parse_range(range, None);
 
                             if let Some(start_range) = range_opt {
-                                let entries = redis_stream.range_start(start_range);
+                                let entries = redis_stream.range_start(start_range, true);
                                 if !entries.is_empty() {
                                     found_entries = true;
                                     break;
