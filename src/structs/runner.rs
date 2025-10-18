@@ -199,29 +199,36 @@ impl Runner {
         }
 
         let list_key = &args[0];
-        let val = &args[1];
-        let mut len = 1;
+        let mut consumed = 1;
+        let mut val_vec: Vec<String> = vec![];
+        for idx in 1..args.len() - 1 {
+            val_vec.push(args[idx].clone());
+            consumed += 1;
+        }
+        let mut len = val_vec.len();
 
         {
             let mut map = db.lock().unwrap();
             if let Some(val_ref) = map.get_mut(list_key) {
                 if let ValueType::List(ref mut redis_list) = val_ref {
-                    redis_list.push(val.clone());
+                    for val in &val_vec {
+                        redis_list.push(val.clone());
+                    }
                     len = redis_list.len();
                 } else {
-                    map.insert(list_key.clone(), ValueType::List(vec![val.clone()]));
+                    map.insert(list_key.clone(), ValueType::List(val_vec.clone()));
                 }
             } else {
-                map.insert(list_key.clone(), ValueType::List(vec![val.clone()]));
+                map.insert(list_key.clone(), ValueType::List(val_vec.clone()));
             }
         }
 
         if !is_slave_and_propagation {
             write_integer(stream, len as i64);
-            let propagation = format!("RPUSH {} {}", list_key, val);
+            let propagation = format!("RPUSH {} {}", list_key, val_vec.join(" "));
             propagate_slaves(global_state, &propagation);
         }
-        2
+        consumed
     }
 
     fn handle_type(
