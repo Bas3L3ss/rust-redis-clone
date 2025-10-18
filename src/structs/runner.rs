@@ -191,75 +191,78 @@ impl Runner {
         if args.len() < 3 {
             write_error(stream, "wrong number of arguments for 'LRANGE'");
             return 0;
-        };
+        }
         let stream_key = &args[0];
 
-        let mut _list: Option<&Vec<String>> = None;
-
         let map = db.lock().unwrap();
-        if let Some(val) = map.get(stream_key) {
-            if let ValueType::List(ref redis_list) = val {
-                _list = Some(redis_list);
-            } else {
-                write_error(
-                    stream,
-                    "WRONGTYPE Operation against a key holding the wrong kind of value",
-                );
+        let redis_list = match map.get(stream_key) {
+            Some(val) => {
+                if let ValueType::List(ref redis_list) = val {
+                    redis_list
+                } else {
+                    write_error(
+                        stream,
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    );
+                    return 3;
+                }
+            }
+            None => {
+                // Redis returns an empty array when the key does not exist for LRANGE
+                write_array::<&str>(stream, &[]);
                 return 3;
             }
-        } else {
-            write_null_bulk_string(stream);
-            return 3;
         };
 
-        if let Some(redis_list) = _list {
-            let (start, end) = (args[1].parse::<i64>(), args[2].parse::<i64>());
-            if start.is_err() || end.is_err() {
+        let (start_i64, end_i64) = match (args[1].parse::<i64>(), args[2].parse::<i64>()) {
+            (Ok(s), Ok(e)) => (s, e),
+            _ => {
                 write_error(
                     stream,
                     "invalid arguments for LRANGE: start and end must be integers",
                 );
                 return 3;
             }
+        };
 
-            let (start, end) = (start.unwrap(), end.unwrap());
-            let start = if start < 0 {
-                let idx = redis_list.len() as i64 + start;
-                if idx < 0 {
-                    0
-                } else {
-                    idx as usize
-                }
-            } else {
-                start as usize
-            };
+        let list_len = redis_list.len() as i64;
 
-            let mut end = if end < 0 {
-                let idx = redis_list.len() as i64 + end;
-                if idx < 0 {
-                    0
-                } else {
-                    idx as usize
-                }
-            } else {
-                end as usize
-            };
+        // Calculate start index
+        let mut start = if start_i64 < 0 {
+            list_len + start_i64
+        } else {
+            start_i64
+        };
+        if start < 0 {
+            start = 0;
+        }
+        let start = start as usize;
 
-            end = if end >= redis_list.len() {
+        // Calculate end index (inclusive)
+        let mut end = if end_i64 < 0 {
+            list_len + end_i64
+        } else {
+            end_i64
+        };
+        if end < 0 {
+            end = 0;
+        }
+        let end = end as usize;
+
+        if start >= redis_list.len() || end < start {
+            write_array::<&str>(stream, &[]);
+        } else {
+            // Redis LRANGE is inclusive of end
+            let upper = if end + 1 > redis_list.len() {
                 redis_list.len()
             } else {
                 end + 1
             };
-
-            if start > end || start >= redis_list.len() {
-                write_array::<&str>(stream, &[]);
-            } else {
-                let result: Vec<Option<&str>> = redis_list[start..end]
-                    .iter()
-                    .map(|s| Some(s.as_str()))
-                    .collect();
-                write_array(stream, &result);
-            }
+            let result: Vec<Option<&str>> = redis_list[start..upper]
+                .iter()
+                .map(|s| Some(s.as_str()))
+                .collect();
+            write_array(stream, &result);
         }
         3
     }
