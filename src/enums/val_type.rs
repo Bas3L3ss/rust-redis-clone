@@ -4,7 +4,7 @@ use crate::structs::stream::Stream;
 
 pub enum ValueType {
     String(String),
-    List(Vec<ValueType>),
+    List(Vec<String>),
     Set(Vec<ValueType>),
     ZSet(Vec<(ValueType, f64)>),
     Hash(HashMap<String, ValueType>),

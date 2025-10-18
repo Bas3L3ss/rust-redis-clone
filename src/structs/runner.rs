@@ -159,6 +159,11 @@ impl Runner {
                 self.cur_step += self.handle_type(stream, args, db, db_config, connection);
             }
 
+            "rpush" => {
+                self.cur_step +=
+                    self.handle_rpush(stream, args, db, global_state, &is_propagation, connection);
+            }
+
             "command" | "docs" => {
                 if connection.transaction.is_txing {
                     write_simple_string(stream, "QUEUED");
@@ -170,6 +175,53 @@ impl Runner {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_rpush(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction runner and enqueuing
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+        if args.len() < 2 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'RPUSH'");
+            }
+            return 0;
+        }
+
+        let list_key = &args[0];
+        let val = &args[1];
+        let mut len = 1;
+
+        {
+            let mut map = db.lock().unwrap();
+            if let Some(val_ref) = map.get_mut(list_key) {
+                if let ValueType::List(ref mut redis_list) = val_ref {
+                    redis_list.push(val.clone());
+                    len = redis_list.len();
+                } else {
+                    map.insert(list_key.clone(), ValueType::List(vec![val.clone()]));
+                }
+            } else {
+                map.insert(list_key.clone(), ValueType::List(vec![val.clone()]));
+            }
+        }
+
+        if !is_slave_and_propagation {
+            write_integer(stream, len as i64);
+            let propagation = format!("RPUSH {} {}", list_key, val);
+            propagate_slaves(global_state, &propagation);
+        }
+        2
     }
 
     fn handle_type(
