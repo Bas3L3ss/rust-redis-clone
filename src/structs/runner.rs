@@ -169,6 +169,11 @@ impl Runner {
                     self.handle_lpush(stream, args, db, global_state, &is_propagation, connection);
             }
 
+            "lpop" => {
+                self.cur_step +=
+                    self.handle_lpop(stream, args, db, global_state, &is_propagation, connection);
+            }
+
             "llen" => {
                 self.cur_step += self.handle_llen(stream, args, db, connection);
             }
@@ -188,6 +193,66 @@ impl Runner {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_lpop(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        _connection: &mut Connection,
+    ) -> usize {
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+
+        if args.len() < 1 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'LPOP'");
+            }
+            return 0;
+        }
+
+        let list_key = &args[0];
+
+        let mut map = db.lock().unwrap();
+        if let Some(val) = map.get_mut(list_key) {
+            if let ValueType::List(ref mut redis_list) = val {
+                if !redis_list.is_empty() {
+                    let pop_elem = redis_list.remove(0);
+                    if !is_slave_and_propagation {
+                        write_bulk_string(stream, &pop_elem);
+                    }
+                    if redis_list.is_empty() {
+                        map.remove(list_key);
+                    }
+                    return 1;
+                } else {
+                    if !is_slave_and_propagation {
+                        write_null_bulk_string(stream);
+                    }
+                    return 1;
+                }
+            } else {
+                if !is_slave_and_propagation {
+                    write_error(
+                        stream,
+                        "WRONGTYPE Operation against a key holding the wrong kind of value",
+                    );
+                }
+                return 0;
+            }
+        }
+
+        if !is_slave_and_propagation {
+            write_null_bulk_string(stream);
+            let propagation = format!("LPOP {}", list_key);
+            propagate_slaves(global_state, &propagation);
+        }
+        1
     }
 
     fn handle_llen(
