@@ -223,16 +223,17 @@ impl Runner {
         }
 
         let list_key = &args[0];
-        let timeout = match args[1].parse::<u64>() {
-            Ok(t) => t,
+        let timeout = match args[1].parse::<f64>() {
+            Ok(t) if t >= 0.0 => t,
             _ => {
                 write_error(
                     stream,
-                    "invalid arguments for BLPOP: timeout must be an integer",
+                    "invalid arguments for BLPOP: timeout must be a non-negative number",
                 );
                 return 2;
             }
         };
+        let timeout = timeout;
 
         let start_time = Instant::now();
         loop {
@@ -264,9 +265,9 @@ impl Runner {
                 }
             }
 
-            if timeout > 0 {
+            if timeout > 0.0 {
                 let elapsed = start_time.elapsed();
-                if elapsed >= Duration::from_secs(timeout) {
+                if elapsed.as_secs_f64() >= timeout {
                     let _ = stream.write_all(b"*-1\r\n");
                     return 2;
                 }
