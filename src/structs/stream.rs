@@ -31,13 +31,18 @@ impl Stream {
         self.entries[start_idx..=end_idx].iter().collect()
     }
 
-    pub fn range_start(&self, start: (u64, u64)) -> Vec<&Entry> {
-        println!("{start:#?}");
+    pub fn range_start(&self, start: (u64, u64), is_greater_than_range: bool) -> Vec<&Entry> {
         let start_idx = match self
             .entries
             .binary_search_by(|e| (e.milisec, e.sequence_number).cmp(&start))
         {
-            Ok(i) => i,
+            Ok(i) => {
+                if is_greater_than_range {
+                    i + 1
+                } else {
+                    i
+                }
+            }
             Err(i) => i,
         };
 

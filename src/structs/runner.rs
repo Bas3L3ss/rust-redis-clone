@@ -749,7 +749,7 @@ impl Runner {
                 }
 
                 let start_range = range_opt.unwrap();
-                let entries = redis_stream.range_start(start_range);
+                let entries = redis_stream.range_start(start_range, range != "$");
 
                 let _ = stream.write_all(b"*2\r\n");
                 let _ = stream.write_all(format!("${}\r\n{}\r\n", key.len(), key).as_bytes());
