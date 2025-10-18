@@ -169,6 +169,10 @@ impl Runner {
                     self.handle_lpush(stream, args, db, global_state, &is_propagation, connection);
             }
 
+            "llen" => {
+                self.cur_step += self.handle_llen(stream, args, db, connection);
+            }
+
             "lrange" => {
                 self.cur_step += self.handle_lrange(stream, args, db, connection);
             }
@@ -184,6 +188,32 @@ impl Runner {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_llen(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        if args.len() < 1 {
+            write_error(stream, "wrong number of arguments for 'LLEN'");
+            return 0;
+        }
+        let list_key = &args[0];
+
+        let map = db.lock().unwrap();
+        if let Some(val) = map.get(list_key) {
+            if let ValueType::List(ref redis_list) = val {
+                write_integer(stream, redis_list.len() as i64);
+            } else {
+                write_integer(stream, 0);
+            }
+        } else {
+            write_integer(stream, 0);
+        }
+        1
     }
 
     fn handle_lrange(
