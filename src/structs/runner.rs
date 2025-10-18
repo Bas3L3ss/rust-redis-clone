@@ -229,6 +229,7 @@ impl Runner {
                 }
             }
         }
+        println!("{count}");
 
         let mut map = db.lock().unwrap();
         if let Some(val) = map.get_mut(list_key) {
