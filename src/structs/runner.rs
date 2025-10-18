@@ -164,6 +164,11 @@ impl Runner {
                     self.handle_rpush(stream, args, db, global_state, &is_propagation, connection);
             }
 
+            "lpush" => {
+                self.cur_step +=
+                    self.handle_lpush(stream, args, db, global_state, &is_propagation, connection);
+            }
+
             "lrange" => {
                 self.cur_step += self.handle_lrange(stream, args, db, connection);
             }
@@ -208,7 +213,6 @@ impl Runner {
                 }
             }
             None => {
-                // Redis returns an empty array when the key does not exist for LRANGE
                 write_array::<&str>(stream, &[]);
                 return 3;
             }
@@ -295,6 +299,61 @@ impl Runner {
             val_vec.push(args[idx].clone());
             consumed += 1;
         }
+        let mut len = val_vec.len();
+
+        {
+            let mut map = db.lock().unwrap();
+            if let Some(val_ref) = map.get_mut(list_key) {
+                if let ValueType::List(ref mut redis_list) = val_ref {
+                    for val in &val_vec {
+                        redis_list.push(val.clone());
+                    }
+                    len = redis_list.len();
+                } else {
+                    map.insert(list_key.clone(), ValueType::List(val_vec.clone()));
+                }
+            } else {
+                map.insert(list_key.clone(), ValueType::List(val_vec.clone()));
+            }
+        }
+
+        if !is_slave_and_propagation {
+            write_integer(stream, len as i64);
+            let propagation = format!("RPUSH {} {}", list_key, val_vec.join(" "));
+            propagate_slaves(global_state, &propagation);
+        }
+        consumed
+    }
+
+    fn handle_lpush(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction runner and enqueuing
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+        if args.len() < 2 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'RPUSH'");
+            }
+            return 0;
+        }
+
+        let list_key = &args[0];
+        let mut consumed = 1;
+        let mut val_vec: Vec<String> = vec![];
+        for idx in 1..args.len() {
+            val_vec.push(args[idx].clone());
+            consumed += 1;
+        }
+        val_vec.reverse();
         let mut len = val_vec.len();
 
         {
