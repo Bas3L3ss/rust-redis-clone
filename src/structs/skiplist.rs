@@ -60,10 +60,12 @@ impl SkipList {
         }
     }
 
-    pub fn add(&mut self, entry: (f64, String), member_dict: &mut HashMap<String, f64>) {
+    pub fn add(&mut self, entry: (f64, String), member_dict: &mut HashMap<String, f64>) -> bool {
         let (score, member) = entry.clone();
+        let mut is_new = true;
 
         if let Some(s) = member_dict.get(&member) {
+            is_new = false;
             self.remove_entry(&s, &member);
         }
 
@@ -112,6 +114,7 @@ impl SkipList {
             update[bottom_to_top_lvl].write().unwrap().forwards[bottom_to_top_lvl] =
                 Some(Arc::clone(&new_node));
         }
+        is_new
     }
 
     fn rand_number() -> usize {

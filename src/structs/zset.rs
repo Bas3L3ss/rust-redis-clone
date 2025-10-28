@@ -15,8 +15,12 @@ impl ZSet {
         }
     }
 
-    pub fn zadd(&mut self, score: f64, member: String) {
-        self.skiplist.add((score, member), &mut self.dict);
+    pub fn zadd(&mut self, score: f64, member: String) -> i64 {
+        if self.skiplist.add((score, member), &mut self.dict) {
+            1
+        } else {
+            0
+        }
     }
 
     pub fn len(&self) -> usize {

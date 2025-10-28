@@ -239,21 +239,22 @@ impl Runner {
             }
         };
         let zset_val = &args[2];
+        let mut _added_number = 1;
         {
             let mut map = db.lock().unwrap();
             let zset_opt = map.get_mut(zset_key);
 
             if let Some(ValueType::ZSet(zset)) = zset_opt {
-                zset.zadd(zset_score, zset_val.clone());
+                _added_number = zset.zadd(zset_score, zset_val.clone());
             } else {
                 let mut new_zset = ZSet::new();
-                new_zset.zadd(zset_score, zset_val.clone());
+                _added_number = new_zset.zadd(zset_score, zset_val.clone());
                 map.insert(zset_key.clone(), ValueType::ZSet(new_zset));
             }
         }
 
         if !is_slave_and_propagation {
-            write_integer(stream, 1 as i64);
+            write_integer(stream, _added_number);
             let propagation = format!("ZADD {} {} {}", zset_key, zset_score, zset_val);
             propagate_slaves(global_state, &propagation);
         }
