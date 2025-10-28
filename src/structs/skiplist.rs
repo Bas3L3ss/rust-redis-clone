@@ -65,8 +65,8 @@ impl SkipList {
         let mut is_new = true;
 
         if let Some(s) = member_dict.get(&member) {
-            is_new = false;
             self.remove_entry(&s, &member);
+            is_new = false;
         }
 
         member_dict.insert(member.clone(), score);
