@@ -1,9 +1,10 @@
-use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 const MAX_LEVEL: usize = 32;
+
+type NodeType = Arc<RwLock<Node>>;
 
 fn is_head() -> bool {
     use rand::Rng;
@@ -16,20 +17,20 @@ pub struct Node {
     pub member: String,
     is_special: bool,
     score: f64,
-    forwards: Vec<Option<Rc<RefCell<Node>>>>,
+    forwards: Vec<Option<NodeType>>,
 }
 
 impl Node {
-    fn new(entry: (f64, String)) -> Rc<RefCell<Node>> {
-        return Rc::new(RefCell::new(Self {
+    fn new(entry: (f64, String)) -> NodeType {
+        return Arc::new(RwLock::new(Self {
             member: entry.1,
             score: entry.0,
             is_special: false,
             forwards: vec![None; MAX_LEVEL],
         }));
     }
-    fn new_dummy() -> Rc<RefCell<Node>> {
-        return Rc::new(RefCell::new(Self {
+    fn new_dummy() -> NodeType {
+        return Arc::new(RwLock::new(Self {
             member: String::new(),
             score: 0.0,
             forwards: vec![None; MAX_LEVEL],
@@ -39,7 +40,7 @@ impl Node {
 }
 #[derive(Debug)]
 pub struct SkipList {
-    head: Rc<RefCell<Node>>,
+    head: NodeType,
     level: usize,
 }
 
@@ -68,21 +69,21 @@ impl SkipList {
 
         member_dict.insert(member.clone(), score);
 
-        let mut update: Vec<Rc<RefCell<Node>>> = vec![Rc::clone(&self.head); MAX_LEVEL];
-        let mut cur = Rc::clone(&self.head);
+        let mut update: Vec<NodeType> = vec![Arc::clone(&self.head); MAX_LEVEL];
+        let mut cur = Arc::clone(&self.head);
 
         for top_to_bottom_lvl in (0..=self.level).rev() {
             loop {
-                let next_opt = cur.borrow().forwards[top_to_bottom_lvl]
+                let next_opt = cur.read().unwrap().forwards[top_to_bottom_lvl]
                     .as_ref()
-                    .map(Rc::clone);
+                    .map(Arc::clone);
 
                 match next_opt {
                     Some(next) => {
-                        let next_ref = next.borrow();
+                        let next_ref = next.read().unwrap();
                         match cmp(next_ref.score, &next_ref.member, score, &member) {
                             Ordering::Less => {
-                                cur = Rc::clone(&next);
+                                cur = Arc::clone(&next);
                             }
                             _ => break,
                         }
@@ -90,13 +91,13 @@ impl SkipList {
                     None => break,
                 }
             }
-            update[top_to_bottom_lvl] = Rc::clone(&cur);
+            update[top_to_bottom_lvl] = Arc::clone(&cur);
         }
 
         let highest_level = SkipList::rand_number();
         if highest_level > self.level {
             for i in self.level + 1..=highest_level {
-                update[i] = Rc::clone(&self.head);
+                update[i] = Arc::clone(&self.head);
             }
             self.level = highest_level;
         }
@@ -104,12 +105,12 @@ impl SkipList {
         let new_node = Node::new(entry);
 
         for bottom_to_top_lvl in 0..=highest_level {
-            let next_opt = update[bottom_to_top_lvl].borrow().forwards[bottom_to_top_lvl]
+            let next_opt = update[bottom_to_top_lvl].read().unwrap().forwards[bottom_to_top_lvl]
                 .as_ref()
-                .map(Rc::clone);
-            new_node.borrow_mut().forwards[bottom_to_top_lvl] = next_opt;
-            update[bottom_to_top_lvl].borrow_mut().forwards[bottom_to_top_lvl] =
-                Some(Rc::clone(&new_node));
+                .map(Arc::clone);
+            new_node.write().unwrap().forwards[bottom_to_top_lvl] = next_opt;
+            update[bottom_to_top_lvl].write().unwrap().forwards[bottom_to_top_lvl] =
+                Some(Arc::clone(&new_node));
         }
     }
 
@@ -123,34 +124,18 @@ impl SkipList {
         lvl
     }
 
-    pub fn print_all(&self) {
-        println!("Skip List:");
-        for lvl in (0..=self.level).rev() {
-            print!("LEVEL {lvl}: [ ");
-            let mut cur = Rc::clone(&self.head);
-            while let Some(node) = {
-                let cur_ref = cur.borrow();
-                cur_ref.forwards[lvl].as_ref().map(Rc::clone)
-            } {
-                print!("{}, ", node.borrow().member);
-                cur = node;
-            }
-            println!("]");
-        }
-    }
-
-    pub fn search_entry(&self, score: &f64, member: &str) -> Option<Rc<RefCell<Node>>> {
-        let mut cur = Rc::clone(&self.head);
+    pub fn search_entry(&self, score: &f64, member: &str) -> Option<NodeType> {
+        let mut cur = Arc::clone(&self.head);
 
         for lvl in (0..=self.level).rev() {
             loop {
-                let next_opt = cur.borrow().forwards[lvl].as_ref().map(Rc::clone);
+                let next_opt = cur.read().unwrap().forwards[lvl].as_ref().map(Arc::clone);
                 match next_opt {
                     Some(next) => {
-                        let nb = next.borrow();
+                        let nb = next.read().unwrap();
                         match cmp(nb.score, &nb.member, *score, member) {
-                            Ordering::Less => cur = Rc::clone(&next),
-                            Ordering::Equal => return Some(Rc::clone(&next)),
+                            Ordering::Less => cur = Arc::clone(&next),
+                            Ordering::Equal => return Some(Arc::clone(&next)),
                             Ordering::Greater => break,
                         }
                     }
@@ -159,11 +144,11 @@ impl SkipList {
             }
         }
 
-        let next_opt = cur.borrow().forwards[0].as_ref().map(Rc::clone);
+        let next_opt = cur.read().unwrap().forwards[0].as_ref().map(Arc::clone);
         if let Some(next) = next_opt {
-            let nb = next.borrow();
+            let nb = next.read().unwrap();
             if nb.score == *score && nb.member == member {
-                return Some(Rc::clone(&next));
+                return Some(Arc::clone(&next));
             }
         }
 
@@ -171,21 +156,21 @@ impl SkipList {
     }
 
     pub fn remove_entry(&mut self, score: &f64, member: &str) -> bool {
-        let mut update: Vec<Option<Rc<RefCell<Node>>>> = vec![None; MAX_LEVEL];
-        let mut cur = Rc::clone(&self.head);
+        let mut update: Vec<Option<NodeType>> = vec![None; MAX_LEVEL];
+        let mut cur = Arc::clone(&self.head);
         let mut is_removed = false;
 
         for top_to_bottom_lvl in (0..=self.level).rev() {
             let mut is_found = false;
             loop {
-                let next_opt = cur.borrow().forwards[top_to_bottom_lvl]
+                let next_opt = cur.read().unwrap().forwards[top_to_bottom_lvl]
                     .as_ref()
-                    .map(Rc::clone);
+                    .map(Arc::clone);
                 match next_opt {
                     Some(next) => {
-                        let next_ref = next.borrow();
+                        let next_ref = next.read().unwrap();
                         match cmp(next_ref.score, &next_ref.member, *score, member) {
-                            Ordering::Less => cur = Rc::clone(&next),
+                            Ordering::Less => cur = Arc::clone(&next),
                             Ordering::Equal => {
                                 is_found = true;
                                 break;
@@ -198,30 +183,31 @@ impl SkipList {
             }
 
             if is_found {
-                update[top_to_bottom_lvl] = Some(Rc::clone(&cur));
+                update[top_to_bottom_lvl] = Some(Arc::clone(&cur));
             }
         }
 
         for bottom_to_top_lvl in 0..=self.level {
             if let Some(ref update_node) = update[bottom_to_top_lvl] {
                 is_removed = true;
-                let delete_node = update_node.borrow().forwards[bottom_to_top_lvl]
+                let delete_node = update_node.read().unwrap().forwards[bottom_to_top_lvl]
                     .as_ref()
-                    .map(Rc::clone)
+                    .map(Arc::clone)
                     .expect("This shouldn't be possible");
 
                 let next_node = {
-                    if let Some(ref next) = delete_node.borrow().forwards[bottom_to_top_lvl] {
-                        Some(Rc::clone(next))
+                    if let Some(ref next) = delete_node.read().unwrap().forwards[bottom_to_top_lvl]
+                    {
+                        Some(Arc::clone(next))
                     } else {
                         None
                     }
                 };
 
-                update_node.borrow_mut().forwards[bottom_to_top_lvl] = next_node;
+                update_node.write().unwrap().forwards[bottom_to_top_lvl] = next_node;
 
                 if bottom_to_top_lvl == self.level
-                    && self.head.borrow().forwards[bottom_to_top_lvl].is_none()
+                    && self.head.read().unwrap().forwards[bottom_to_top_lvl].is_none()
                 {
                     self.level -= 1
                 }
@@ -229,40 +215,5 @@ impl SkipList {
         }
 
         is_removed
-    }
-
-    pub fn range(&self, start: f64, end: f64) -> Vec<Rc<RefCell<Node>>> {
-        // TODO: handle duplicates
-        if end < start {
-            panic!("Invalid range");
-        }
-
-        let mut cur = Rc::clone(&self.head);
-
-        for lvl in (0..=self.level).rev() {
-            loop {
-                let next_opt = cur.borrow().forwards[lvl].as_ref().map(Rc::clone);
-                match next_opt {
-                    Some(next) if next.borrow().score < start => cur = next,
-                    _ => break,
-                }
-            }
-        }
-
-        let mut cur_opt = cur.borrow().forwards[0].as_ref().map(Rc::clone);
-        let mut node_vec = vec![];
-
-        while let Some(node) = cur_opt {
-            let score = node.borrow().score;
-            if score > end {
-                break;
-            }
-            if !node.borrow().is_special {
-                node_vec.push(Rc::clone(&node));
-            }
-            cur_opt = node.borrow().forwards[0].as_ref().map(Rc::clone);
-        }
-
-        node_vec
     }
 }

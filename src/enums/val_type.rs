@@ -9,7 +9,7 @@ pub enum ValueType {
     ZSet(ZSet),
     Set(Vec<ValueType>),
     Hash(HashMap<String, ValueType>),
-    VectorSet(Vec<Vec<f32>>), // For future AI/vector search support
+    VectorSet(Vec<Vec<f32>>),
 }
 
 impl ValueType {
