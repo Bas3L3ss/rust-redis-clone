@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use crate::structs::stream::Stream;
+use crate::structs::{stream::Stream, zset::ZSet};
 
 pub enum ValueType {
     String(String),
-    List(Vec<String>),
-    Set(Vec<ValueType>),
-    ZSet(Vec<(ValueType, f64)>),
-    Hash(HashMap<String, ValueType>),
     Stream(Stream),
+    List(Vec<String>),
+    ZSet(ZSet),
+    Set(Vec<ValueType>),
+    Hash(HashMap<String, ValueType>),
     VectorSet(Vec<Vec<f32>>), // For future AI/vector search support
 }
 
@@ -39,11 +39,8 @@ impl ToString for ValueType {
                 format!("{{{}}}", items.join(", "))
             }
             ValueType::ZSet(zset) => {
-                let items: Vec<String> = zset
-                    .iter()
-                    .map(|(v, score)| format!("({}: {})", v.to_string(), score))
-                    .collect();
-                format!("[{}]", items.join(", "))
+                // TODO: FINISH TOSTRING FOR THIS
+                format!("")
             }
             ValueType::Hash(hash) => {
                 let items: Vec<String> = hash

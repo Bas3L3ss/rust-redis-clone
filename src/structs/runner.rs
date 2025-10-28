@@ -6,6 +6,7 @@ use crate::structs::replica::add_replica;
 use crate::structs::stream::Stream;
 use crate::structs::transaction_runner::TransactionRunner;
 use crate::structs::xread_config::XreadConfig;
+use crate::structs::zset::ZSet;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
     is_matched, parse_range, propagate_slaves, write_array, write_bulk_string, write_error,
@@ -174,6 +175,11 @@ impl Runner {
                     self.handle_lpop(stream, args, db, global_state, &is_propagation, connection);
             }
 
+            "zadd" => {
+                self.cur_step +=
+                    self.handle_zadd(stream, args, db, global_state, &is_propagation, connection);
+            }
+
             "blpop" => {
                 self.cur_step +=
                     self.handle_blpop(stream, args, db, global_state, &is_propagation, connection);
@@ -198,6 +204,64 @@ impl Runner {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_zadd(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+
+        if args.len() < 3 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'BLPOP'");
+            }
+            return 0;
+        }
+
+        let zset_key = &args[0];
+        let zset_score = match args[1].parse::<f64>() {
+            Ok(score) => score,
+            Err(_) => {
+                if !is_slave_and_propagation {
+                    write_error(stream, "invalid score for 'ZADD': must be a number");
+                }
+                return 0;
+            }
+        };
+        let zset_val = &args[2];
+        let mut _len = 1;
+        {
+            let mut map = db.lock().unwrap();
+            let zset_opt = map.get_mut(zset_key);
+
+            if let Some(ValueType::ZSet(zset)) = zset_opt {
+                zset.zadd(zset_score, zset_val.clone());
+                _len = zset.len();
+            } else {
+                let mut new_zset = ZSet::new();
+                new_zset.zadd(zset_score, zset_val.clone());
+                _len = new_zset.len();
+                map.insert(zset_key.clone(), ValueType::ZSet(new_zset));
+            }
+        }
+
+        if !is_slave_and_propagation {
+            write_integer(stream, _len as i64);
+            let propagation = format!("ZADD {} {} {}", zset_key, zset_score, zset_val);
+            propagate_slaves(global_state, &propagation);
+        }
+
+        3
     }
 
     fn handle_blpop(
