@@ -15,7 +15,6 @@ fn is_head() -> bool {
 #[derive(Debug)]
 pub struct Node {
     pub member: String,
-    is_special: bool,
     score: f64,
     forwards: Vec<Option<NodeType>>,
 }
@@ -25,7 +24,6 @@ impl Node {
         return Arc::new(RwLock::new(Self {
             member: entry.1,
             score: entry.0,
-            is_special: false,
             forwards: vec![None; MAX_LEVEL],
         }));
     }
@@ -34,7 +32,6 @@ impl Node {
             member: String::new(),
             score: 0.0,
             forwards: vec![None; MAX_LEVEL],
-            is_special: true,
         }));
     }
 }

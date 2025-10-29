@@ -1,5 +1,6 @@
 use crate::enums::add_stream_entries_result::StreamResult;
 use crate::enums::val_type::ValueType;
+use crate::geo::{encode, validate_latitude, validate_longitude};
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
@@ -9,9 +10,8 @@ use crate::structs::xread_config::XreadConfig;
 use crate::structs::zset::ZSet;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, parse_range, propagate_slaves, validate_latitude, validate_longitude, write_array,
-    write_bulk_string, write_error, write_integer, write_null_bulk_string, write_redis_file,
-    write_resp_array, write_simple_string,
+    is_matched, parse_range, propagate_slaves, write_array, write_bulk_string, write_error,
+    write_integer, write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
 };
 use std::collections::HashMap;
 use std::io::Write;
@@ -311,7 +311,7 @@ impl Runner {
         }
 
         let zset_key = &args[0];
-        let longtitude = match args[1].parse::<f64>() {
+        let longitude = match args[1].parse::<f64>() {
             Ok(long) if validate_longitude(long) => long,
             _ => {
                 if !is_slave_and_propagation {
@@ -333,6 +333,8 @@ impl Runner {
             }
         };
 
+        let score = encode(latitude, longitude);
+
         let member = &args[3];
         let mut _added_number = 1;
         {
@@ -340,10 +342,10 @@ impl Runner {
             let zset_opt = map.get_mut(zset_key);
 
             if let Some(ValueType::ZSet(zset)) = zset_opt {
-                _added_number = zset.zadd(0.0, member.clone());
+                _added_number = zset.zadd(score as f64, member.clone());
             } else {
                 let mut new_zset = ZSet::new();
-                _added_number = new_zset.zadd(0.0, member.clone());
+                _added_number = new_zset.zadd(score as f64, member.clone());
                 map.insert(zset_key.clone(), ValueType::ZSet(new_zset));
             }
         }

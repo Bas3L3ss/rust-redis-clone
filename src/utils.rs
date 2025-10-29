@@ -451,29 +451,3 @@ pub fn parse_range(range: &String, last_entry_id: Option<(u64, u64)>) -> Option<
         }
     }
 }
-
-pub fn validate_longitude(lon: f64) -> bool {
-    lon >= -180.0 && lon <= 180.0
-}
-
-pub fn validate_latitude(lat: f64) -> bool {
-    lat >= -85.05112878 && lat <= 85.05112878
-}
-pub fn geo_distance(lon1: f64, lat1: f64, lon2: f64, lat2: f64) -> f64 {
-    let rad = std::f64::consts::PI / 180.0;
-    let lat1_rad = lat1 * rad;
-    let lon1_rad = lon1 * rad;
-    let lat2_rad = lat2 * rad;
-    let lon2_rad = lon2 * rad;
-
-    let dlat = lat2_rad - lat1_rad;
-    let dlon = lon2_rad - lon1_rad;
-
-    let a =
-        (dlat / 2.0).sin().powi(2) + lat1_rad.cos() * lat2_rad.cos() * (dlon / 2.0).sin().powi(2);
-    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
-
-    // Radius of the Earth in meters
-    let earth_radius_m = 6371000.0;
-    earth_radius_m * c
-}
