@@ -1,6 +1,6 @@
 use crate::enums::add_stream_entries_result::StreamResult;
 use crate::enums::val_type::ValueType;
-use crate::geo::{decode, encode, validate_latitude, validate_longitude};
+use crate::geo::{decode, encode, geo_distance, validate_latitude, validate_longitude};
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
@@ -229,6 +229,10 @@ impl Runner {
 
             "geopos" => {
                 self.cur_step += self.handle_geopos(stream, args, db, connection);
+            }
+
+            "geodist" => {
+                self.cur_step += self.handle_geodist(stream, args, db, connection);
             }
 
             _ => {
@@ -765,6 +769,44 @@ impl Runner {
             }
         }
         args.len()
+    }
+
+    fn handle_geodist(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: handle transaction
+        if args.len() < 3 {
+            write_error(stream, "wrong number of arguments for 'GEODIST'");
+            return 0;
+        }
+        let zset_key = &args[0];
+        let place1 = &args[1];
+        let place2 = &args[2];
+
+        let map = db.lock().unwrap();
+
+        if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
+            let score1_opt = zset.zscore(place1);
+            let score2_opt = zset.zscore(place2);
+
+            if let (Some(score1), Some(score2)) = (score1_opt, score2_opt) {
+                // Interpret score as stored geo-encoded value (u64)
+                let (lat1, lon1) = decode(*score1 as u64);
+                let (lat2, lon2) = decode(*score2 as u64);
+                let dist = geo_distance(lat1, lon1, lat2, lon2);
+                write_bulk_string(stream, &dist.to_string());
+            } else {
+                write_null_bulk_string(stream);
+            }
+        } else {
+            // ZSet doesn't exist
+            write_null_bulk_string(stream);
+        }
+        3
     }
 
     fn handle_zscore(
