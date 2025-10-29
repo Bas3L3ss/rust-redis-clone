@@ -179,6 +179,10 @@ impl Runner {
                 self.cur_step +=
                     self.handle_zadd(stream, args, db, global_state, &is_propagation, connection);
             }
+            "zrem" => {
+                self.cur_step +=
+                    self.handle_zrem(stream, args, db, global_state, &is_propagation, connection);
+            }
 
             "zscore" => {
                 self.cur_step += self.handle_zscore(stream, args, db, connection);
@@ -245,7 +249,7 @@ impl Runner {
         }
 
         let zset_key = &args[0];
-        let zset_score = match args[1].parse::<f64>() {
+        let score = match args[1].parse::<f64>() {
             Ok(score) => score,
             Err(_) => {
                 if !is_slave_and_propagation {
@@ -254,24 +258,70 @@ impl Runner {
                 return 0;
             }
         };
-        let zset_val = &args[2];
+        let member = &args[2];
         let mut _added_number = 1;
         {
             let mut map = db.lock().unwrap();
             let zset_opt = map.get_mut(zset_key);
 
             if let Some(ValueType::ZSet(zset)) = zset_opt {
-                _added_number = zset.zadd(zset_score, zset_val.clone());
+                _added_number = zset.zadd(score, member.clone());
             } else {
                 let mut new_zset = ZSet::new();
-                _added_number = new_zset.zadd(zset_score, zset_val.clone());
+                _added_number = new_zset.zadd(score, member.clone());
                 map.insert(zset_key.clone(), ValueType::ZSet(new_zset));
             }
         }
 
         if !is_slave_and_propagation {
             write_integer(stream, _added_number);
-            let propagation = format!("ZADD {} {} {}", zset_key, zset_score, zset_val);
+            let propagation = format!("ZADD {} {} {}", zset_key, score, member);
+            propagate_slaves(global_state, &propagation);
+        }
+
+        3
+    }
+
+    fn handle_zrem(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+
+        if args.len() < 2 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'BLPOP'");
+            }
+            return 0;
+        }
+
+        let zset_key = &args[0];
+        let member = &args[1];
+
+        let mut _removed_number = 1;
+        {
+            let mut map = db.lock().unwrap();
+            let zset_opt = map.get_mut(zset_key);
+
+            if let Some(ValueType::ZSet(zset)) = zset_opt {
+                zset.zrem(member);
+            } else {
+                _removed_number = 0;
+            }
+        }
+
+        if !is_slave_and_propagation {
+            write_integer(stream, _removed_number);
+            let propagation = format!("ZREM {} {}", zset_key, member);
             propagate_slaves(global_state, &propagation);
         }
 
@@ -602,7 +652,6 @@ impl Runner {
         db: &DbType,
         _connection: &mut Connection,
     ) -> usize {
-        // TODO: transaction
         if args.len() < 2 {
             write_error(stream, "wrong number of arguments for 'LLEN'");
             return 0;

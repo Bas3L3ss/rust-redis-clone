@@ -43,7 +43,16 @@ impl ZSet {
         self.dict.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.dict.is_empty()
+    pub fn zrem(&mut self, member: &String) -> u32 {
+        if let Some(score) = self.dict.get(member) {
+            if self.skiplist.remove_entry(score, member) {
+                self.dict.remove(member);
+                1
+            } else {
+                0
+            }
+        } else {
+            0
+        }
     }
 }

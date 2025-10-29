@@ -127,37 +127,6 @@ impl SkipList {
         lvl
     }
 
-    pub fn search_entry(&self, score: &f64, member: &str) -> Option<NodeType> {
-        let mut cur = Arc::clone(&self.head);
-
-        for lvl in (0..=self.level).rev() {
-            loop {
-                let next_opt = cur.read().unwrap().forwards[lvl].as_ref().map(Arc::clone);
-                match next_opt {
-                    Some(next) => {
-                        let nb = next.read().unwrap();
-                        match cmp(nb.score, &nb.member, *score, member) {
-                            Ordering::Less => cur = Arc::clone(&next),
-                            Ordering::Equal => return Some(Arc::clone(&next)),
-                            Ordering::Greater => break,
-                        }
-                    }
-                    None => break,
-                }
-            }
-        }
-
-        let next_opt = cur.read().unwrap().forwards[0].as_ref().map(Arc::clone);
-        if let Some(next) = next_opt {
-            let nb = next.read().unwrap();
-            if nb.score == *score && nb.member == member {
-                return Some(Arc::clone(&next));
-            }
-        }
-
-        None
-    }
-
     pub fn remove_entry(&mut self, score: &f64, member: &str) -> bool {
         let mut update: Vec<Option<NodeType>> = vec![None; MAX_LEVEL];
         let mut cur = Arc::clone(&self.head);
