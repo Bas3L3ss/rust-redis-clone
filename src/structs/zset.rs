@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::structs::skiplist::SkipList;
+use crate::structs::skiplist::{self, SkipList};
 
 pub struct ZSet {
     dict: HashMap<String, f64>,
@@ -20,6 +20,14 @@ impl ZSet {
             1
         } else {
             0
+        }
+    }
+
+    pub fn zrank(&self, member: &String) -> Option<u64> {
+        if let Some(score) = self.dict.get(member) {
+            self.skiplist.rank(score, member)
+        } else {
+            None
         }
     }
 

@@ -219,4 +219,28 @@ impl SkipList {
 
         is_removed
     }
+
+    pub fn rank(&self, score: &f64, member: &str) -> Option<u64> {
+        let mut rank = 0;
+        let mut cur = Arc::clone(&self.head);
+
+        loop {
+            let next_opt = {
+                let cur_ref = cur.read().unwrap();
+                cur_ref.forwards[0].as_ref().map(Arc::clone)
+            };
+
+            match next_opt {
+                Some(next) => {
+                    let next_ref = next.read().unwrap();
+                    if next_ref.score == *score && next_ref.member == member {
+                        return Some(rank);
+                    }
+                    cur = Arc::clone(&next);
+                    rank += 1;
+                }
+                None => return None,
+            }
+        }
+    }
 }
