@@ -220,6 +220,11 @@ impl Runner {
                 write_simple_string(stream, "OK");
             }
 
+            "geoadd" => {
+                self.cur_step +=
+                    self.handle_geoadd(stream, args, db, global_state, &is_propagation, connection);
+            }
+
             _ => {
                 write_error(stream, "unknown command");
             }
@@ -280,6 +285,72 @@ impl Runner {
         }
 
         3
+    }
+
+    fn handle_geoadd(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        global_state: &RedisGlobalType,
+        is_propagation: &bool,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        let is_slave_and_propagation = {
+            let global = global_state.lock().unwrap();
+            !global.is_master() && *is_propagation
+        };
+
+        if args.len() < 4 {
+            if !is_slave_and_propagation {
+                write_error(stream, "wrong number of arguments for 'BLPOP'");
+            }
+            return 0;
+        }
+
+        let zset_key = &args[0];
+        let longtitude = match args[1].parse::<f64>() {
+            Ok(long) => long,
+            Err(_) => {
+                if !is_slave_and_propagation {
+                    write_error(stream, "invalid score for 'ZADD': must be a number");
+                }
+                return 0;
+            }
+        };
+        let latitude = match args[2].parse::<f64>() {
+            Ok(lat) => lat,
+            Err(_) => {
+                if !is_slave_and_propagation {
+                    write_error(stream, "invalid score for 'ZADD': must be a number");
+                }
+                return 0;
+            }
+        };
+
+        let member = &args[3];
+        let mut _added_number = 1;
+        {
+            let mut map = db.lock().unwrap();
+            let zset_opt = map.get_mut(zset_key);
+
+            if let Some(ValueType::ZSet(zset)) = zset_opt {
+                _added_number = zset.zadd(0.0, member.clone());
+            } else {
+                let mut new_zset = ZSet::new();
+                _added_number = new_zset.zadd(0.0, member.clone());
+                map.insert(zset_key.clone(), ValueType::ZSet(new_zset));
+            }
+        }
+
+        if !is_slave_and_propagation {
+            write_integer(stream, _added_number);
+            let propagation = format!("ZADD {} {} {}", zset_key, 0.0, member);
+            propagate_slaves(global_state, &propagation);
+        }
+
+        4
     }
 
     fn handle_zrem(
