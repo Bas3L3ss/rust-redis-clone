@@ -9,8 +9,9 @@ use crate::structs::xread_config::XreadConfig;
 use crate::structs::zset::ZSet;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
-    is_matched, parse_range, propagate_slaves, write_array, write_bulk_string, write_error,
-    write_integer, write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
+    is_matched, parse_range, propagate_slaves, validate_latitude, validate_longitude, write_array,
+    write_bulk_string, write_error, write_integer, write_null_bulk_string, write_redis_file,
+    write_resp_array, write_simple_string,
 };
 use std::collections::HashMap;
 use std::io::Write;
@@ -250,7 +251,7 @@ impl Runner {
             if !is_slave_and_propagation {
                 write_error(stream, "wrong number of arguments for 'BLPOP'");
             }
-            return 0;
+            return 3;
         }
 
         let zset_key = &args[0];
@@ -260,7 +261,7 @@ impl Runner {
                 if !is_slave_and_propagation {
                     write_error(stream, "invalid score for 'ZADD': must be a number");
                 }
-                return 0;
+                return 3;
             }
         };
         let member = &args[2];
@@ -311,21 +312,24 @@ impl Runner {
 
         let zset_key = &args[0];
         let longtitude = match args[1].parse::<f64>() {
-            Ok(long) => long,
-            Err(_) => {
+            Ok(long) if validate_longitude(long) => long,
+            _ => {
                 if !is_slave_and_propagation {
-                    write_error(stream, "invalid score for 'ZADD': must be a number");
+                    write_error(
+                        stream,
+                        "invalid score for 'GEOADD': must be a valid longitude (-180..180)",
+                    );
                 }
-                return 0;
+                return 4;
             }
         };
         let latitude = match args[2].parse::<f64>() {
-            Ok(lat) => lat,
-            Err(_) => {
+            Ok(lat) if validate_latitude(lat) => lat,
+            _ => {
                 if !is_slave_and_propagation {
-                    write_error(stream, "invalid score for 'ZADD': must be a number");
+                    write_error(stream, "invalid score for 'GEOADD': must be a valid latitude (-85.05112878..85.05112878)");
                 }
-                return 0;
+                return 4;
             }
         };
 
