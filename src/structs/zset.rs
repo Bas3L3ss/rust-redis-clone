@@ -31,6 +31,10 @@ impl ZSet {
         }
     }
 
+    pub fn zrange(&self, start: i64, end: i64) -> Vec<(f64, String)> {
+        self.skiplist.range(start, end)
+    }
+
     pub fn len(&self) -> usize {
         self.dict.len()
     }

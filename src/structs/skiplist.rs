@@ -226,7 +226,6 @@ impl SkipList {
 
         let mut total_len = 0;
         {
-            // First, count total elements
             let mut node = Arc::clone(&self.head);
             loop {
                 let next_opt = {
@@ -269,7 +268,6 @@ impl SkipList {
             match next_opt {
                 Some(next) => {
                     if idx >= start {
-                        // collect until end
                         let nref = next.read().unwrap();
                         result.push((nref.score, nref.member.clone()));
                         if idx == end {

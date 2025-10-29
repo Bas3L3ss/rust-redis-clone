@@ -183,6 +183,10 @@ impl Runner {
                 self.cur_step += self.handle_zrank(stream, args, db, connection);
             }
 
+            "zrange" => {
+                self.cur_step += self.handle_zrange(stream, args, db, connection);
+            }
+
             "blpop" => {
                 self.cur_step +=
                     self.handle_blpop(stream, args, db, global_state, &is_propagation, connection);
@@ -515,6 +519,48 @@ impl Runner {
             write_null_bulk_string(stream);
         }
         2
+    }
+
+    fn handle_zrange(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        if args.len() < 3 {
+            write_error(stream, "wrong number of arguments for 'LLEN'");
+            return 0;
+        }
+        let zset_key = &args[0];
+        let start = match args[1].parse::<i64>() {
+            Ok(v) => v,
+            Err(_) => {
+                write_error(stream, "ERR value is not an integer or out of range");
+                return 0;
+            }
+        };
+        let end = match args[2].parse::<i64>() {
+            Ok(v) => v,
+            Err(_) => {
+                write_error(stream, "ERR value is not an integer or out of range");
+                return 0;
+            }
+        };
+
+        let map = db.lock().unwrap();
+        if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
+            let sorted_members: Vec<Option<String>> = zset
+                .zrange(start, end)
+                .into_iter()
+                .map(|item| Some(item.1))
+                .collect();
+            write_array(stream, &sorted_members);
+        } else {
+            write_null_bulk_string(stream);
+        }
+        3
     }
 
     fn handle_lrange(
