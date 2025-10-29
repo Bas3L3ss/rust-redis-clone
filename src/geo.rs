@@ -8,6 +8,8 @@ const MAX_LONGITUDE: f64 = 180.0;
 const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
 const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
 
+const EARTH_RADIUS_METERS: f64 = 6372797.560856;
+
 fn spread_int32_to_int64(v: u32) -> u64 {
     let mut result = v as u64;
     result = (result | (result << 16)) & 0x0000FFFF0000FFFF;
@@ -89,7 +91,6 @@ pub fn validate_latitude(lat: f64) -> bool {
 pub fn geo_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let to_radians = |deg: f64| deg * PI / 180.0;
 
-    let r = 6371000.0;
     let lat1_rad = to_radians(lat1);
     let lat2_rad = to_radians(lat2);
     let delta_lat = to_radians(lat2 - lat1);
@@ -99,5 +100,5 @@ pub fn geo_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
         + lat1_rad.cos() * lat2_rad.cos() * (delta_lon / 2.0).sin().powi(2);
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
-    r * c
+    EARTH_RADIUS_METERS * c
 }
