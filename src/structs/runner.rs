@@ -1,6 +1,6 @@
 use crate::enums::add_stream_entries_result::StreamResult;
 use crate::enums::val_type::ValueType;
-use crate::geo::{encode, validate_latitude, validate_longitude};
+use crate::geo::{decode, encode, validate_latitude, validate_longitude};
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
 use crate::structs::replica::add_replica;
@@ -11,7 +11,8 @@ use crate::structs::zset::ZSet;
 use crate::types::{DbConfigType, DbType, RedisGlobalType};
 use crate::utils::{
     is_matched, parse_range, propagate_slaves, write_array, write_bulk_string, write_error,
-    write_integer, write_null_bulk_string, write_redis_file, write_resp_array, write_simple_string,
+    write_integer, write_null_array, write_null_bulk_string, write_redis_file, write_resp_array,
+    write_simple_string,
 };
 use std::collections::HashMap;
 use std::io::Write;
@@ -226,6 +227,10 @@ impl Runner {
                     self.handle_geoadd(stream, args, db, global_state, &is_propagation, connection);
             }
 
+            "geopos" => {
+                self.cur_step += self.handle_geopos(stream, args, db, connection);
+            }
+
             _ => {
                 write_error(stream, "unknown command");
             }
@@ -249,7 +254,7 @@ impl Runner {
 
         if args.len() < 3 {
             if !is_slave_and_propagation {
-                write_error(stream, "wrong number of arguments for 'BLPOP'");
+                write_error(stream, "wrong number of arguments for 'ZADD'");
             }
             return 3;
         }
@@ -305,7 +310,7 @@ impl Runner {
 
         if args.len() < 4 {
             if !is_slave_and_propagation {
-                write_error(stream, "wrong number of arguments for 'BLPOP'");
+                write_error(stream, "wrong number of arguments for 'GEOADD'");
             }
             return 0;
         }
@@ -376,7 +381,7 @@ impl Runner {
 
         if args.len() < 2 {
             if !is_slave_and_propagation {
-                write_error(stream, "wrong number of arguments for 'BLPOP'");
+                write_error(stream, "wrong number of arguments for 'ZREM'");
             }
             return 0;
         }
@@ -638,7 +643,7 @@ impl Runner {
     ) -> usize {
         // TODO: transaction
         if args.len() < 2 {
-            write_error(stream, "wrong number of arguments for 'LLEN'");
+            write_error(stream, "wrong number of arguments for 'ZRANK'");
             return 0;
         }
         let zset_key = &args[0];
@@ -666,7 +671,7 @@ impl Runner {
     ) -> usize {
         // TODO: transaction
         if args.len() < 3 {
-            write_error(stream, "wrong number of arguments for 'LLEN'");
+            write_error(stream, "wrong number of arguments for 'ZRANGE'");
             return 0;
         }
         let zset_key = &args[0];
@@ -708,7 +713,7 @@ impl Runner {
     ) -> usize {
         // TODO: transaction
         if args.len() < 1 {
-            write_error(stream, "wrong number of arguments for 'LLEN'");
+            write_error(stream, "wrong number of arguments for 'ZCARD'");
             return 0;
         }
         let zset_key = &args[0];
@@ -722,6 +727,41 @@ impl Runner {
         }
         1
     }
+
+    fn handle_geopos(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        if args.len() < 2 {
+            write_error(stream, "wrong number of arguments for 'GEOPOS'");
+            return 0;
+        }
+        let zset_key = &args[0];
+        let member = &args[1];
+
+        let map = db.lock().unwrap();
+
+        if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
+            if let Some(distance) = zset.zscore(member) {
+                let (lat, long) = decode(distance.clone() as u64);
+
+                let _ = stream.write(b"*1\r\n");
+                let _ = stream.write(b"*2\r\n");
+                write_bulk_string(stream, &lat.to_string());
+                write_bulk_string(stream, &long.to_string());
+            } else {
+                write_null_array(stream);
+            }
+        } else {
+            write_null_array(stream);
+        }
+        2
+    }
+
     fn handle_zscore(
         &self,
         stream: &mut TcpStream,
@@ -730,7 +770,7 @@ impl Runner {
         _connection: &mut Connection,
     ) -> usize {
         if args.len() < 2 {
-            write_error(stream, "wrong number of arguments for 'LLEN'");
+            write_error(stream, "wrong number of arguments for 'ZSCORE'");
             return 0;
         }
         let zset_key = &args[0];
@@ -903,7 +943,7 @@ impl Runner {
         };
         if args.len() < 2 {
             if !is_slave_and_propagation {
-                write_error(stream, "wrong number of arguments for 'RPUSH'");
+                write_error(stream, "wrong number of arguments for 'LPUSH'");
             }
             return 0;
         }
@@ -1560,7 +1600,7 @@ impl Runner {
         _connection: &mut Connection,
     ) -> usize {
         if args.len() < 3 {
-            write_error(stream, "wrong number of arguments for 'XACC'");
+            write_error(stream, "wrong number of arguments for 'XRANGE'");
             return 0;
         };
         let stream_key = &args[0];
@@ -1644,7 +1684,7 @@ impl Runner {
         };
         if args.len() < 4 {
             if !is_slave_and_propagation {
-                write_error(stream, "wrong number of arguments for 'XACC'");
+                write_error(stream, "wrong number of arguments for 'XADD'");
             }
             return 0;
         }

@@ -41,6 +41,9 @@ pub fn write_array<T: AsRef<str>>(stream: &mut TcpStream, items: &[Option<T>]) {
         }
     }
 }
+pub fn write_null_array(stream: &mut TcpStream) {
+    let _ = stream.write_all(b"*-1\r\n");
+}
 
 pub fn write_resp_array(stream: &mut TcpStream, items: &[Option<String>]) {
     let _ = stream.write_all(format!("*{}\r\n", items.len()).as_bytes());
