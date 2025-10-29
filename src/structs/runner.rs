@@ -746,20 +746,23 @@ impl Runner {
         let map = db.lock().unwrap();
 
         if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
-            let _ = stream.write(format!("*{}\r\n", places.len()).as_bytes());
+            // Form RESP array of size = places.len()
+            let _ = stream.write_all(format!("*{}\r\n", places.len()).as_bytes());
             for place in places {
-                if let Some(distance) = zset.zscore(place) {
-                    let (lat, long) = decode(distance.clone() as u64);
-
-                    let _ = stream.write(b"*2\r\n");
-                    write_bulk_string(stream, &lat.to_string());
+                if let Some(score) = zset.zscore(place) {
+                    let (lat, long) = decode(score.clone() as u64);
+                    let _ = stream.write_all(b"*2\r\n");
                     write_bulk_string(stream, &long.to_string());
+                    write_bulk_string(stream, &lat.to_string());
                 } else {
                     write_null_array(stream);
                 }
             }
         } else {
-            write_null_array(stream);
+            let _ = stream.write_all(format!("*{}\r\n", places.len()).as_bytes());
+            for _ in places {
+                write_null_array(stream);
+            }
         }
         args.len()
     }
