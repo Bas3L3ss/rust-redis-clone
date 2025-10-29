@@ -179,6 +179,11 @@ impl Runner {
                 self.cur_step +=
                     self.handle_zadd(stream, args, db, global_state, &is_propagation, connection);
             }
+
+            "zscore" => {
+                self.cur_step += self.handle_zscore(stream, args, db, connection);
+            }
+
             "zrank" => {
                 self.cur_step += self.handle_zrank(stream, args, db, connection);
             }
@@ -587,6 +592,32 @@ impl Runner {
             write_integer(stream, zset.zcard() as i64);
         } else {
             write_integer(stream, 0);
+        }
+        1
+    }
+    fn handle_zscore(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        if args.len() < 2 {
+            write_error(stream, "wrong number of arguments for 'LLEN'");
+            return 0;
+        }
+        let zset_key = &args[0];
+        let member = &args[1];
+
+        let map = db.lock().unwrap();
+
+        if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
+            if let Some(score) = zset.zscore(member) {
+                write_bulk_string(stream, &score.to_string());
+            }
+        } else {
+            write_null_bulk_string(stream);
         }
         1
     }

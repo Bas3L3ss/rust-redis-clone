@@ -23,6 +23,10 @@ impl ZSet {
         }
     }
 
+    pub fn zscore(&self, member: &String) -> Option<&f64> {
+        self.dict.get(member)
+    }
+
     pub fn zrank(&self, member: &String) -> Option<u64> {
         if let Some(score) = self.dict.get(member) {
             self.skiplist.rank(score, member)
