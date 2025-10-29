@@ -558,7 +558,7 @@ impl Runner {
                 .collect();
             write_array(stream, &sorted_members);
         } else {
-            write_null_bulk_string(stream);
+            write_array::<&str>(stream, &[]);
         }
         3
     }
