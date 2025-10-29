@@ -220,6 +220,73 @@ impl SkipList {
         is_removed
     }
 
+    pub fn range(&self, start: i64, end: i64) -> Vec<(f64, String)> {
+        let mut result = Vec::new();
+        let mut cur = Arc::clone(&self.head);
+
+        let mut total_len = 0;
+        {
+            // First, count total elements
+            let mut node = Arc::clone(&self.head);
+            loop {
+                let next_opt = {
+                    let node_ref = node.read().unwrap();
+                    node_ref.forwards[0].as_ref().map(Arc::clone)
+                };
+                match next_opt {
+                    Some(next) => {
+                        total_len += 1;
+                        node = next;
+                    }
+                    None => break,
+                }
+            }
+        }
+        let start = if start < 0 {
+            (total_len as i64 + start).max(0)
+        } else {
+            start.min(total_len as i64)
+        } as usize;
+        let mut end = if end < 0 {
+            (total_len as i64 + end).max(0)
+        } else {
+            end
+        } as usize;
+        if end >= total_len {
+            end = if total_len == 0 { 0 } else { total_len - 1 };
+        }
+        if start > end || start >= total_len {
+            return result;
+        }
+
+        // Move to start node
+        let mut idx = 0;
+        loop {
+            let next_opt = {
+                let cur_ref = cur.read().unwrap();
+                cur_ref.forwards[0].as_ref().map(Arc::clone)
+            };
+            match next_opt {
+                Some(next) => {
+                    if idx >= start {
+                        // collect until end
+                        let nref = next.read().unwrap();
+                        result.push((nref.score, nref.member.clone()));
+                        if idx == end {
+                            break;
+                        }
+                    }
+                    cur = next;
+                    idx += 1;
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        result
+    }
+
     pub fn rank(&self, score: &f64, member: &str) -> Option<u64> {
         let mut rank = 0;
         let mut cur = Arc::clone(&self.head);
