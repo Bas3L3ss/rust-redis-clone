@@ -741,25 +741,27 @@ impl Runner {
             return 0;
         }
         let zset_key = &args[0];
-        let member = &args[1];
+        let places = &args[1..];
 
         let map = db.lock().unwrap();
 
         if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
-            if let Some(distance) = zset.zscore(member) {
-                let (lat, long) = decode(distance.clone() as u64);
+            let _ = stream.write(format!("*{}\r\n", places.len()).as_bytes());
+            for place in places {
+                if let Some(distance) = zset.zscore(place) {
+                    let (lat, long) = decode(distance.clone() as u64);
 
-                let _ = stream.write(b"*1\r\n");
-                let _ = stream.write(b"*2\r\n");
-                write_bulk_string(stream, &lat.to_string());
-                write_bulk_string(stream, &long.to_string());
-            } else {
-                write_null_array(stream);
+                    let _ = stream.write(b"*2\r\n");
+                    write_bulk_string(stream, &lat.to_string());
+                    write_bulk_string(stream, &long.to_string());
+                } else {
+                    write_null_array(stream);
+                }
             }
         } else {
             write_null_array(stream);
         }
-        2
+        args.len()
     }
 
     fn handle_zscore(
