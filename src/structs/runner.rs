@@ -187,6 +187,10 @@ impl Runner {
                 self.cur_step += self.handle_zrange(stream, args, db, connection);
             }
 
+            "zcard" => {
+                self.cur_step += self.handle_zcard(stream, args, db, connection);
+            }
+
             "blpop" => {
                 self.cur_step +=
                     self.handle_blpop(stream, args, db, global_state, &is_propagation, connection);
@@ -561,6 +565,30 @@ impl Runner {
             write_array::<&str>(stream, &[]);
         }
         3
+    }
+
+    fn handle_zcard(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: transaction
+        if args.len() < 1 {
+            write_error(stream, "wrong number of arguments for 'LLEN'");
+            return 0;
+        }
+        let zset_key = &args[0];
+
+        let map = db.lock().unwrap();
+
+        if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
+            write_integer(stream, zset.zcard() as i64);
+        } else {
+            write_integer(stream, 0);
+        }
+        1
     }
 
     fn handle_lrange(

@@ -35,11 +35,10 @@ impl ZSet {
         self.skiplist.range(start, end)
     }
 
-    pub fn len(&self) -> usize {
+    pub fn zcard(&self) -> usize {
         self.dict.len()
     }
 
-    /// Check if ZSet is
     pub fn is_empty(&self) -> bool {
         self.dict.is_empty()
     }

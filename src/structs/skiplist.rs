@@ -246,14 +246,17 @@ impl SkipList {
         } else {
             start.min(total_len as i64)
         } as usize;
+
         let mut end = if end < 0 {
             (total_len as i64 + end).max(0)
         } else {
             end
         } as usize;
+
         if end >= total_len {
             end = if total_len == 0 { 0 } else { total_len - 1 };
         }
+
         if start > end || start >= total_len {
             return result;
         }
