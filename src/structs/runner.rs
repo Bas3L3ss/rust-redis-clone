@@ -313,14 +313,14 @@ impl Runner {
             let zset_opt = map.get_mut(zset_key);
 
             if let Some(ValueType::ZSet(zset)) = zset_opt {
-                zset.zrem(member);
+                _removed_number = zset.zrem(member);
             } else {
                 _removed_number = 0;
             }
         }
 
         if !is_slave_and_propagation {
-            write_integer(stream, _removed_number);
+            write_integer(stream, _removed_number as i64);
             let propagation = format!("ZREM {} {}", zset_key, member);
             propagate_slaves(global_state, &propagation);
         }
