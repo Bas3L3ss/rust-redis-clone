@@ -619,7 +619,7 @@ impl Runner {
         } else {
             write_null_bulk_string(stream);
         }
-        1
+        2
     }
 
     fn handle_lrange(
