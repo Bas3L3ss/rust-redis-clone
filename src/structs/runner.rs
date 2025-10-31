@@ -3,7 +3,6 @@ use crate::enums::val_type::ValueType;
 use crate::geo::{decode, encode, geo_distance, validate_latitude, validate_longitude};
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
-use crate::structs::global;
 use crate::structs::replica::add_replica;
 use crate::structs::stream::Stream;
 use crate::structs::transaction_runner::TransactionRunner;
@@ -19,7 +18,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::net::TcpStream;
 use std::sync::mpsc::channel;
-use std::thread::{self, sleep};
+use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct Runner {
@@ -312,6 +311,11 @@ impl Runner {
                 "subscribe" => {
                     self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
                 }
+
+                "unsubscribe" => {
+                    self.cur_step += self.handle_unsubscribe(stream, args, global_state, connection)
+                }
+
                 "publish" => self.cur_step += self.handle_publish(stream, args, global_state),
 
                 _ => {
@@ -344,7 +348,7 @@ impl Runner {
             }
         };
 
-        for s in senders {
+        for (_, s) in senders {
             let _ = s.send(msg.clone());
         }
 
@@ -380,15 +384,14 @@ impl Runner {
             let subscribed_channel = global.channel_map.get_mut(channel_name);
             let (sender, receiver) = channel::<String>();
             if let Some(channel) = subscribed_channel {
-                channel.push(sender);
-
+                channel.insert(connection.id.clone(), sender);
                 connection
                     .subscribed_channels
                     .insert(channel_name.clone(), receiver);
             } else {
-                global
-                    .channel_map
-                    .insert(channel_name.clone(), vec![sender]);
+                let mut map = HashMap::new();
+                map.insert(connection.id.clone(), sender);
+                global.channel_map.insert(channel_name.clone(), map);
                 connection
                     .subscribed_channels
                     .insert(channel_name.clone(), receiver);
@@ -403,46 +406,52 @@ impl Runner {
             stream.write_all(format!("${}\r\n{}\r\n", channel_name.len(), channel_name).as_bytes());
         let _ = stream.write_all(format!(":{}\r\n", channel_number).as_bytes());
 
-        // The thread spawning here is **not reasonable** because:
-        // 1. You are capturing `connection` and `stream` by reference from the calling thread,
-        //    but both are not `Send`/`Sync`, especially `stream` (a &mut TcpStream), and the
-        //    `connection` holds `Receiver` types which are not thread safe in this usage.
-        // 2. This will quickly lead to UB (undefined behavior) or runtime errors.
-
-        // Instead, SUBSCRIBE should trigger a long-lived handler for the connection
-        // at the top level that waits for pub/sub messages and client commands,
-        // replacing the normal command-processing loop.
-
-        // REMOVE THE THREAD SPAWN ENTIRELY FROM HERE.
-
         1
     }
 
-    //     thread::spawn(|| {
-    //     while let Some(receiver) = connection.subscribed_channels.get(channel_name) {
-    //         let received = receiver.recv().unwrap();
-    //         write_array(
-    //             stream,
-    //             &[Some("message"), Some(&channel_name), Some(&received)],
-    //         );
-    //     }
-    // });
+    fn handle_unsubscribe(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        global_state: &RedisGlobalType,
+        connection: &mut Connection,
+    ) -> usize {
+        if args.len() < 1 {
+            write_error(stream, "wrong number of arguments for 'SUBSCRIBE'");
+            return 0;
+        }
 
-    // Recommendation:
-    //
-    // The code that waits on `connection.subscribed_channels` (including the `recv` loop
-    // and output to the client's TcpStream) should be run at the top level, in the main connection handler thread
-    // (for example, in your `handle_connection` function / connection handler). When a client subscribes,
-    // switch that connection's main loop to one that waits for pub/sub messages **and** accepts new commands
-    // like UNSUBSCRIBE or PING, as is standard in redis.
-    //
-    // One approach is:
-    // - In your client handler, after a SUBSCRIBE, replace the handler loop for that connection with a new loop
-    //   that uses `select!`/`poll`/timeout to handle both the TcpStream (for unsubscribe/ping commands)
-    //   and the set of Receivers for subscriptions.
-    //
-    // This way, you avoid thread-safety issues, multiple threads accessing the same TcpStream, etc.
-    //
+        let channel_name = &args[0];
+
+        let message: &str = "unsubscribe";
+
+        {
+            if let Some(_) = connection.subscribed_channels.remove(channel_name) {
+                let mut global = global_state.lock().unwrap();
+                if let Some(channel_map) = global.channel_map.get_mut(channel_name) {
+                    channel_map.remove(&connection.id);
+                    if channel_map.is_empty() {
+                        global.channel_map.remove(channel_name);
+                    }
+                }
+            } else {
+                write_error(
+                    stream,
+                    &format!("client is not subscribed to channel {channel_name}"),
+                );
+            }
+        }
+
+        let channel_number = connection.subscribed_channels.len();
+
+        let _ = stream.write_all(format!("*{}\r\n", 3).as_bytes());
+        let _ = stream.write_all(format!("${}\r\n{}\r\n", message.len(), message).as_bytes());
+        let _ =
+            stream.write_all(format!("${}\r\n{}\r\n", channel_name.len(), channel_name).as_bytes());
+        let _ = stream.write_all(format!(":{}\r\n", channel_number).as_bytes());
+
+        1
+    }
 
     fn handle_zadd(
         &self,

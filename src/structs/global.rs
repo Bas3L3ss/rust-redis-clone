@@ -2,10 +2,7 @@ use std::{
     collections::HashMap,
     env::Args,
     net::TcpStream,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Arc, Mutex,
-    },
+    sync::{mpsc::Sender, Arc, Mutex},
 };
 
 use crate::structs::replica::ReplicaState;
@@ -23,7 +20,7 @@ pub struct RedisGlobal {
     pub dir_path: String,
     pub dbfilename: String,
     pub offset_replica_sync: usize,
-    pub channel_map: HashMap<String, Vec<Sender<String>>>,
+    pub channel_map: HashMap<String, HashMap<String, Sender<String>>>,
 }
 
 impl RedisGlobal {
