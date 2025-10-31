@@ -82,7 +82,9 @@ impl Runner {
                     self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
                 }
 
-                "unsubscribe" => {}
+                "unsubscribe" => {
+                    self.cur_step += self.handle_unsubscribe(stream, args, global_state, connection)
+                }
                 "psubscribe" => {}
                 "punsubscribe" => {}
                 "ping" => {
@@ -310,10 +312,6 @@ impl Runner {
 
                 "subscribe" => {
                     self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
-                }
-
-                "unsubscribe" => {
-                    self.cur_step += self.handle_unsubscribe(stream, args, global_state, connection)
                 }
 
                 "publish" => self.cur_step += self.handle_publish(stream, args, global_state),
