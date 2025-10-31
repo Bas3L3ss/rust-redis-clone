@@ -239,10 +239,39 @@ impl Runner {
                 self.cur_step += self.handle_geosearch(stream, args, db, connection);
             }
 
+            "subscribe" => {
+                self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
+            }
+
             _ => {
                 write_error(stream, "unknown command");
             }
         }
+    }
+
+    fn handle_subscribe(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        global_state: &RedisGlobalType,
+        connection: &mut Connection,
+    ) -> usize {
+        if args.len() < 1 {
+            write_error(stream, "wrong number of arguments for 'SUBSCRIBE'");
+            return 1;
+        }
+
+        let channel_name = &args[0];
+
+        let _ = stream.write_all(format!("*{}\r\n", 3).as_bytes());
+        let message = "subscribe";
+        let channel_number = 1;
+        let _ = stream.write_all(format!("${}\r\n{}\r\n", message.len(), message).as_bytes());
+        let _ =
+            stream.write_all(format!("${}\r\n{}\r\n", channel_name.len(), channel_name).as_bytes());
+        let _ = stream.write_all(format!(":{}\r\n", channel_number).as_bytes());
+
+        1
     }
 
     fn handle_zadd(
