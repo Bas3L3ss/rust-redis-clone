@@ -89,6 +89,7 @@ impl Runner {
 
                 _ => {
                     write_error(stream, &format!("Can't execute '{command}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context"));
+                    self.cur_step = self.args.len();
                 }
             }
         } else {
