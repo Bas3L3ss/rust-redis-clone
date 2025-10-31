@@ -439,6 +439,7 @@ impl Runner {
                     stream,
                     &format!("client is not subscribed to channel {channel_name}"),
                 );
+                return 1;
             }
         }
 
