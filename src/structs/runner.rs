@@ -264,8 +264,18 @@ impl Runner {
         let channel_name = &args[0];
 
         let _ = stream.write_all(format!("*{}\r\n", 3).as_bytes());
-        let message = "subscribe";
-        let channel_number = 1;
+        let message: &str = "subscribe";
+        let channel_number = {
+            let mut global = global_state.lock().unwrap();
+
+            let num = global
+                .channel_map
+                .entry(channel_name.clone())
+                .and_modify(|v| *v += 1)
+                .or_insert(1);
+            *num
+        };
+
         let _ = stream.write_all(format!("${}\r\n{}\r\n", message.len(), message).as_bytes());
         let _ =
             stream.write_all(format!("${}\r\n{}\r\n", channel_name.len(), channel_name).as_bytes());

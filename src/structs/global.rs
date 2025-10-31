@@ -20,6 +20,7 @@ pub struct RedisGlobal {
     pub dir_path: String,
     pub dbfilename: String,
     pub offset_replica_sync: usize,
+    pub channel_map: HashMap<String, usize>,
 }
 
 impl RedisGlobal {
@@ -103,6 +104,7 @@ impl RedisGlobal {
             dbfilename,
             dir_path,
             offset_replica_sync: 0,
+            channel_map: HashMap::new(),
         }
     }
 }
