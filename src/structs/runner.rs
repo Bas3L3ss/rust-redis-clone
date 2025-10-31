@@ -85,7 +85,7 @@ impl Runner {
                 "psubscribe" => {}
                 "punsubscribe" => {}
                 "ping" => {
-                    self.handle_ping(stream, connection);
+                    self.handle_subscribed_ping(stream);
                 }
                 "quit" => {}
 
