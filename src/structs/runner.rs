@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::net::TcpStream;
 use std::sync::mpsc::channel;
-use std::thread::sleep;
+use std::thread::{self, sleep};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct Runner {
@@ -402,6 +402,14 @@ impl Runner {
         let _ =
             stream.write_all(format!("${}\r\n{}\r\n", channel_name.len(), channel_name).as_bytes());
         let _ = stream.write_all(format!(":{}\r\n", channel_number).as_bytes());
+
+        while let Some(receiver) = connection.subscribed_channels.get(channel_name) {
+            let received = receiver.recv().unwrap();
+            write_array(
+                stream,
+                &[Some("message"), Some(&channel_name), Some(&received)],
+            );
+        }
 
         1
     }
