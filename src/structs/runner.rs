@@ -3,6 +3,7 @@ use crate::enums::val_type::ValueType;
 use crate::geo::{decode, encode, geo_distance, validate_latitude, validate_longitude};
 use crate::structs::config::Config;
 use crate::structs::connection::Connection;
+use crate::structs::global;
 use crate::structs::replica::add_replica;
 use crate::structs::stream::Stream;
 use crate::structs::transaction_runner::TransactionRunner;
@@ -17,6 +18,7 @@ use crate::utils::{
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::TcpStream;
+use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -75,7 +77,7 @@ impl Runner {
 
         eprintln!("Received command: {:?}", command);
 
-        if connection.is_subscribed {
+        if connection.subscribed_channels.len() > 0 {
             match command.as_str() {
                 "subscribe" => {
                     self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
@@ -310,12 +312,44 @@ impl Runner {
                 "subscribe" => {
                     self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
                 }
+                "publish" => self.cur_step += self.handle_publish(stream, args, global_state),
 
                 _ => {
                     write_error(stream, "unknown command");
                 }
             }
         }
+    }
+
+    fn handle_publish(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        global_state: &RedisGlobalType,
+    ) -> usize {
+        if args.len() < 2 {
+            write_error(stream, "wrong number of arguments for 'PUBLISH'");
+            return 0;
+        }
+        let channel_name = &args[0];
+        let msg = &args[1];
+
+        let (senders, length) = {
+            match global_state.lock().unwrap().channel_map.get(channel_name) {
+                Some(senders) => (senders.clone(), senders.len()),
+                None => {
+                    write_error(stream, &format!("channel {channel_name} not found"));
+                    return 2;
+                }
+            }
+        };
+
+        for s in senders {
+            let _ = s.send(msg.clone());
+        }
+
+        write_integer(stream, length as i64);
+        2
     }
 
     fn handle_subscribe(
@@ -327,16 +361,43 @@ impl Runner {
     ) -> usize {
         if args.len() < 1 {
             write_error(stream, "wrong number of arguments for 'SUBSCRIBE'");
-            return 1;
+            return 0;
         }
 
         let channel_name = &args[0];
 
-        let _ = stream.write_all(format!("*{}\r\n", 3).as_bytes());
         let message: &str = "subscribe";
-        connection.channels_connected += 1;
-        connection.is_subscribed = true;
-        let channel_number = connection.channels_connected;
+
+        {
+            if connection.subscribed_channels.get(channel_name).is_some() {
+                write_error(
+                    stream,
+                    &format!("Already subscribed to channel {channel_name}"),
+                );
+                return 1;
+            }
+            let mut global = global_state.lock().unwrap();
+            let subscribed_channel = global.channel_map.get_mut(channel_name);
+            let (sender, receiver) = channel::<String>();
+            if let Some(channel) = subscribed_channel {
+                channel.push(sender);
+
+                connection
+                    .subscribed_channels
+                    .insert(channel_name.clone(), receiver);
+            } else {
+                global
+                    .channel_map
+                    .insert(channel_name.clone(), vec![sender]);
+                connection
+                    .subscribed_channels
+                    .insert(channel_name.clone(), receiver);
+            }
+        }
+
+        let channel_number = connection.subscribed_channels.len();
+
+        let _ = stream.write_all(format!("*{}\r\n", 3).as_bytes());
         let _ = stream.write_all(format!("${}\r\n{}\r\n", message.len(), message).as_bytes());
         let _ =
             stream.write_all(format!("${}\r\n{}\r\n", channel_name.len(), channel_name).as_bytes());

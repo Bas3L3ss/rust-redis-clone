@@ -1,11 +1,12 @@
+use std::{collections::HashMap, sync::mpsc::Receiver};
+
 use crate::structs::transaction::Transaction;
 
 pub struct Connection {
     pub slave_port: Option<String>,
     pub is_slave_established: bool,
     pub transaction: Transaction,
-    pub channels_connected: usize,
-    pub is_subscribed: bool,
+    pub subscribed_channels: HashMap<String, Receiver<String>>,
 }
 
 impl Default for Connection {
@@ -14,8 +15,7 @@ impl Default for Connection {
             slave_port: None,
             is_slave_established: false,
             transaction: Transaction::new(),
-            channels_connected: 0,
-            is_subscribed: false,
+            subscribed_channels: HashMap::new(),
         }
     }
 }
