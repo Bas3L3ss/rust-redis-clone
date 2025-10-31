@@ -403,16 +403,46 @@ impl Runner {
             stream.write_all(format!("${}\r\n{}\r\n", channel_name.len(), channel_name).as_bytes());
         let _ = stream.write_all(format!(":{}\r\n", channel_number).as_bytes());
 
-        while let Some(receiver) = connection.subscribed_channels.get(channel_name) {
-            let received = receiver.recv().unwrap();
-            write_array(
-                stream,
-                &[Some("message"), Some(&channel_name), Some(&received)],
-            );
-        }
+        // The thread spawning here is **not reasonable** because:
+        // 1. You are capturing `connection` and `stream` by reference from the calling thread,
+        //    but both are not `Send`/`Sync`, especially `stream` (a &mut TcpStream), and the
+        //    `connection` holds `Receiver` types which are not thread safe in this usage.
+        // 2. This will quickly lead to UB (undefined behavior) or runtime errors.
+
+        // Instead, SUBSCRIBE should trigger a long-lived handler for the connection
+        // at the top level that waits for pub/sub messages and client commands,
+        // replacing the normal command-processing loop.
+
+        // REMOVE THE THREAD SPAWN ENTIRELY FROM HERE.
 
         1
     }
+
+    //     thread::spawn(|| {
+    //     while let Some(receiver) = connection.subscribed_channels.get(channel_name) {
+    //         let received = receiver.recv().unwrap();
+    //         write_array(
+    //             stream,
+    //             &[Some("message"), Some(&channel_name), Some(&received)],
+    //         );
+    //     }
+    // });
+
+    // Recommendation:
+    //
+    // The code that waits on `connection.subscribed_channels` (including the `recv` loop
+    // and output to the client's TcpStream) should be run at the top level, in the main connection handler thread
+    // (for example, in your `handle_connection` function / connection handler). When a client subscribes,
+    // switch that connection's main loop to one that waits for pub/sub messages **and** accepts new commands
+    // like UNSUBSCRIBE or PING, as is standard in redis.
+    //
+    // One approach is:
+    // - In your client handler, after a SUBSCRIBE, replace the handler loop for that connection with a new loop
+    //   that uses `select!`/`poll`/timeout to handle both the TcpStream (for unsubscribe/ping commands)
+    //   and the set of Receivers for subscriptions.
+    //
+    // This way, you avoid thread-safety issues, multiple threads accessing the same TcpStream, etc.
+    //
 
     fn handle_zadd(
         &self,

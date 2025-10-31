@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::io::Read;
-use std::net::{TcpListener, TcpStream};
+use std::io::{self, Read};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, thread};
@@ -11,7 +11,7 @@ use codecrafters_redis::structs::global::RedisGlobal;
 use codecrafters_redis::structs::request::Request;
 use codecrafters_redis::structs::runner::Runner;
 use codecrafters_redis::types::{DbConfigType, DbType, RedisGlobalType};
-use codecrafters_redis::utils::update_replica_offsets;
+use codecrafters_redis::utils::{update_replica_offsets, write_array};
 
 fn main() {
     println!("Logs from your program will appear here!");
@@ -181,21 +181,82 @@ fn handle_connection(
     let mut local_offset = 0;
     let mut read_buffer: Vec<u8> = Vec::new();
 
+    // Set a read timeout on stream, e.g., 100 ms, to allow interruptible loop for pubsub
+    stream
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap_or(());
+
     loop {
         if connection_info.is_slave_established {
             break;
         }
+
+        // Check for pub/sub mode (any active subscriptions)
+        let pubsub_channels = !connection_info.subscribed_channels.is_empty();
+
+        // If in pubsub mode, handle both incoming commands and channel messages
+        if pubsub_channels {
+            // 1. Try to receive pub/sub messages and forward them to client
+            let mut delivered_messages = false;
+            // We clone the keys to avoid holding borrow on the map
+            let channel_names: Vec<String> = connection_info
+                .subscribed_channels
+                .keys()
+                .cloned()
+                .collect();
+
+            for channel in &channel_names {
+                // Note: remove_entry returns Option<(K, V)>, but we do not want to remove the subscription
+                // So we use get instead
+                // We'll use try_recv to avoid blocking
+                if let Some(receiver) = connection_info.subscribed_channels.get(channel) {
+                    use std::sync::mpsc::TryRecvError;
+                    match receiver.try_recv() {
+                        Ok(msg) => {
+                            // RESP:  ["message", channel, message]
+                            let _ = write_array(
+                                &mut stream,
+                                &[Some("message"), Some(channel), Some(&msg)],
+                            );
+                            delivered_messages = true;
+                        }
+                        Err(TryRecvError::Empty) => {} // No message right now
+                        Err(TryRecvError::Disconnected) => {
+                            // The broadcaster is gone, remove this subscription
+                            // But, it's best to let the command layer do that
+                        }
+                    }
+                }
+            }
+            // 2. Continue to accept input from the client (for PING, UNSUBSCRIBE, etc)
+        }
+
+        // Always read from client
         let mut temp = [0u8; 1024];
-        let bytes_read = match stream.read(&mut temp) {
-            Ok(0) => break,
-            Ok(n) => n,
+        match stream.read(&mut temp) {
+            Ok(0) => {
+                // Client closed
+                // (Optional) close subscriptions, etc
+                // Forcibly shutdown the socket for completeness
+                let _ = stream.shutdown(Shutdown::Both);
+                break;
+            }
+            Ok(n) => {
+                read_buffer.extend_from_slice(&temp[..n]);
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                // Timeout (no data available), continue so we can periodically check pub/sub
+                continue;
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
+                // Timeout, just continue
+                continue;
+            }
             Err(e) => {
                 eprintln!("read error from api handler: {e}");
                 break;
             }
         };
-
-        read_buffer.extend_from_slice(&temp[..bytes_read]);
 
         while let Some((request, consumed)) = Request::try_parse(&read_buffer) {
             local_offset += consumed;
