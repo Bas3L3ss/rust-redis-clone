@@ -402,7 +402,7 @@ impl Runner {
     }
 
     fn handle_subscribed_ping(&self, stream: &mut TcpStream) {
-        write_array(stream, &[Some("PONG"), Some("")]);
+        write_array(stream, &[Some("pong"), Some("")]);
     }
 
     fn handle_geoadd(
