@@ -434,12 +434,6 @@ impl Runner {
                         global.channel_map.remove(channel_name);
                     }
                 }
-            } else {
-                write_error(
-                    stream,
-                    &format!("client is not subscribed to channel {channel_name}"),
-                );
-                return 1;
             }
         }
 
