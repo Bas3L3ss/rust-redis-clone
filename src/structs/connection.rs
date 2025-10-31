@@ -5,6 +5,7 @@ pub struct Connection {
     pub is_slave_established: bool,
     pub transaction: Transaction,
     pub channels_connected: usize,
+    pub is_subscribed: bool,
 }
 
 impl Default for Connection {
@@ -14,6 +15,7 @@ impl Default for Connection {
             is_slave_established: false,
             transaction: Transaction::new(),
             channels_connected: 0,
+            is_subscribed: false,
         }
     }
 }

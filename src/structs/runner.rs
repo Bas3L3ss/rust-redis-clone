@@ -75,176 +75,242 @@ impl Runner {
 
         eprintln!("Received command: {:?}", command);
 
-        match command.as_str() {
-            "ping" => {
-                self.handle_ping(stream, connection);
-            }
-            "echo" => {
-                self.cur_step += self.handle_echo(stream, args, connection);
-            }
-            "set" => {
-                self.cur_step += self.handle_set(
-                    stream,
-                    args,
-                    db,
-                    db_config,
-                    global_state,
-                    &is_propagation,
-                    connection,
-                );
-            }
-            "get" => {
-                self.cur_step += self.handle_get(stream, args, db, db_config, connection);
-            }
-            "del" => {
-                self.cur_step += self.handle_del(
-                    stream,
-                    args,
-                    db,
-                    db_config,
-                    global_state,
-                    &is_propagation,
-                    connection,
-                );
-            }
-            "incr" => {
-                self.cur_step += self.handle_incr(
-                    stream,
-                    args,
-                    db,
-                    db_config,
-                    global_state,
-                    &is_propagation,
-                    connection,
-                );
-            }
-            "config" => {
-                self.cur_step += self.handle_config(stream, args, global_state, connection);
-            }
-            "keys" => {
-                self.cur_step += self.handle_keys(stream, args, db, db_config, connection);
-            }
-            "info" => {
-                self.handle_info(stream, args, db, db_config, global_state, connection);
-            }
-            "replconf" => {
-                self.cur_step +=
-                    self.handle_replconf(stream, args, global_state, connection, local_offset);
-            }
-            "psync" => {
-                self.cur_step += self.handle_psync(stream, args, global_state, connection);
-            }
-            "wait" => {
-                self.cur_step += self.handle_wait(stream, args, global_state, connection);
-            }
-            "multi" => {
-                self.handle_multi(stream, connection);
-            }
-            "xadd" => {
-                self.cur_step +=
-                    self.handle_xadd(stream, args, db, global_state, &is_propagation, connection);
-            }
-            "xrange" => {
-                self.cur_step += self.handle_xrange(stream, args, db, connection);
-            }
-            "xread" => {
-                self.cur_step += self.handle_xread(stream, args, db, connection);
-            }
-            "discard" => {
-                self.handle_discard(stream, connection);
-            }
-
-            "exec" => {
-                self.handle_exec(stream, db, db_config, global_state, connection);
-            }
-
-            "type" => {
-                self.cur_step += self.handle_type(stream, args, db, db_config, connection);
-            }
-
-            "rpush" => {
-                self.cur_step +=
-                    self.handle_rpush(stream, args, db, global_state, &is_propagation, connection);
-            }
-
-            "lpush" => {
-                self.cur_step +=
-                    self.handle_lpush(stream, args, db, global_state, &is_propagation, connection);
-            }
-
-            "lpop" => {
-                self.cur_step +=
-                    self.handle_lpop(stream, args, db, global_state, &is_propagation, connection);
-            }
-
-            "zadd" => {
-                self.cur_step +=
-                    self.handle_zadd(stream, args, db, global_state, &is_propagation, connection);
-            }
-            "zrem" => {
-                self.cur_step +=
-                    self.handle_zrem(stream, args, db, global_state, &is_propagation, connection);
-            }
-
-            "zscore" => {
-                self.cur_step += self.handle_zscore(stream, args, db, connection);
-            }
-
-            "zrank" => {
-                self.cur_step += self.handle_zrank(stream, args, db, connection);
-            }
-
-            "zrange" => {
-                self.cur_step += self.handle_zrange(stream, args, db, connection);
-            }
-
-            "zcard" => {
-                self.cur_step += self.handle_zcard(stream, args, db, connection);
-            }
-
-            "blpop" => {
-                self.cur_step +=
-                    self.handle_blpop(stream, args, db, global_state, &is_propagation, connection);
-            }
-
-            "llen" => {
-                self.cur_step += self.handle_llen(stream, args, db, connection);
-            }
-
-            "lrange" => {
-                self.cur_step += self.handle_lrange(stream, args, db, connection);
-            }
-
-            "command" | "docs" => {
-                if connection.transaction.is_txing {
-                    write_simple_string(stream, "QUEUED");
+        if connection.is_subscribed {
+            match command.as_str() {
+                "subscribe" => {
+                    self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
                 }
-                write_simple_string(stream, "OK");
-            }
 
-            "geoadd" => {
-                self.cur_step +=
-                    self.handle_geoadd(stream, args, db, global_state, &is_propagation, connection);
-            }
+                "unsubscribe" => {}
+                "psubscribe" => {}
+                "punsubscribe" => {}
+                "ping" => {}
+                "quit" => {}
 
-            "geopos" => {
-                self.cur_step += self.handle_geopos(stream, args, db, connection);
+                _ => {
+                    write_error(stream, &format!("Can't execute '{command}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context"));
+                }
             }
+        } else {
+            match command.as_str() {
+                "ping" => {
+                    self.handle_ping(stream, connection);
+                }
+                "echo" => {
+                    self.cur_step += self.handle_echo(stream, args, connection);
+                }
+                "set" => {
+                    self.cur_step += self.handle_set(
+                        stream,
+                        args,
+                        db,
+                        db_config,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+                "get" => {
+                    self.cur_step += self.handle_get(stream, args, db, db_config, connection);
+                }
+                "del" => {
+                    self.cur_step += self.handle_del(
+                        stream,
+                        args,
+                        db,
+                        db_config,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+                "incr" => {
+                    self.cur_step += self.handle_incr(
+                        stream,
+                        args,
+                        db,
+                        db_config,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+                "config" => {
+                    self.cur_step += self.handle_config(stream, args, global_state, connection);
+                }
+                "keys" => {
+                    self.cur_step += self.handle_keys(stream, args, db, db_config, connection);
+                }
+                "info" => {
+                    self.handle_info(stream, args, db, db_config, global_state, connection);
+                }
+                "replconf" => {
+                    self.cur_step +=
+                        self.handle_replconf(stream, args, global_state, connection, local_offset);
+                }
+                "psync" => {
+                    self.cur_step += self.handle_psync(stream, args, global_state, connection);
+                }
+                "wait" => {
+                    self.cur_step += self.handle_wait(stream, args, global_state, connection);
+                }
+                "multi" => {
+                    self.handle_multi(stream, connection);
+                }
+                "xadd" => {
+                    self.cur_step += self.handle_xadd(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+                "xrange" => {
+                    self.cur_step += self.handle_xrange(stream, args, db, connection);
+                }
+                "xread" => {
+                    self.cur_step += self.handle_xread(stream, args, db, connection);
+                }
+                "discard" => {
+                    self.handle_discard(stream, connection);
+                }
 
-            "geodist" => {
-                self.cur_step += self.handle_geodist(stream, args, db, connection);
-            }
+                "exec" => {
+                    self.handle_exec(stream, db, db_config, global_state, connection);
+                }
 
-            "geosearch" => {
-                self.cur_step += self.handle_geosearch(stream, args, db, connection);
-            }
+                "type" => {
+                    self.cur_step += self.handle_type(stream, args, db, db_config, connection);
+                }
 
-            "subscribe" => {
-                self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
-            }
+                "rpush" => {
+                    self.cur_step += self.handle_rpush(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
 
-            _ => {
-                write_error(stream, "unknown command");
+                "lpush" => {
+                    self.cur_step += self.handle_lpush(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+
+                "lpop" => {
+                    self.cur_step += self.handle_lpop(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+
+                "zadd" => {
+                    self.cur_step += self.handle_zadd(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+                "zrem" => {
+                    self.cur_step += self.handle_zrem(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+
+                "zscore" => {
+                    self.cur_step += self.handle_zscore(stream, args, db, connection);
+                }
+
+                "zrank" => {
+                    self.cur_step += self.handle_zrank(stream, args, db, connection);
+                }
+
+                "zrange" => {
+                    self.cur_step += self.handle_zrange(stream, args, db, connection);
+                }
+
+                "zcard" => {
+                    self.cur_step += self.handle_zcard(stream, args, db, connection);
+                }
+
+                "blpop" => {
+                    self.cur_step += self.handle_blpop(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+
+                "llen" => {
+                    self.cur_step += self.handle_llen(stream, args, db, connection);
+                }
+
+                "lrange" => {
+                    self.cur_step += self.handle_lrange(stream, args, db, connection);
+                }
+
+                "command" | "docs" => {
+                    if connection.transaction.is_txing {
+                        write_simple_string(stream, "QUEUED");
+                    }
+                    write_simple_string(stream, "OK");
+                }
+
+                "geoadd" => {
+                    self.cur_step += self.handle_geoadd(
+                        stream,
+                        args,
+                        db,
+                        global_state,
+                        &is_propagation,
+                        connection,
+                    );
+                }
+
+                "geopos" => {
+                    self.cur_step += self.handle_geopos(stream, args, db, connection);
+                }
+
+                "geodist" => {
+                    self.cur_step += self.handle_geodist(stream, args, db, connection);
+                }
+
+                "geosearch" => {
+                    self.cur_step += self.handle_geosearch(stream, args, db, connection);
+                }
+
+                "subscribe" => {
+                    self.cur_step += self.handle_subscribe(stream, args, global_state, connection)
+                }
+
+                _ => {
+                    write_error(stream, "unknown command");
+                }
             }
         }
     }
@@ -266,6 +332,7 @@ impl Runner {
         let _ = stream.write_all(format!("*{}\r\n", 3).as_bytes());
         let message: &str = "subscribe";
         connection.channels_connected += 1;
+        connection.is_subscribed = true;
         let channel_number = connection.channels_connected;
         let _ = stream.write_all(format!("${}\r\n{}\r\n", message.len(), message).as_bytes());
         let _ =

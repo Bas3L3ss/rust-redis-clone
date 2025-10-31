@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use std::{env, thread};
 
 use codecrafters_redis::rdb::start_up::start_up;
 use codecrafters_redis::structs::connection::Connection;
@@ -15,9 +15,9 @@ use codecrafters_redis::utils::update_replica_offsets;
 
 fn main() {
     println!("Logs from your program will appear here!");
-    let start = std::time::Instant::now();
+    let start = Instant::now();
 
-    let global_state = Arc::new(Mutex::new(RedisGlobal::init(std::env::args())));
+    let global_state = Arc::new(Mutex::new(RedisGlobal::init(env::args())));
 
     let port = {
         let global = global_state.lock().unwrap();
@@ -98,9 +98,8 @@ pub fn spawn_replica_handler_thread(
 
                 read_buffer.extend_from_slice(&temp[..bytes_read]);
 
-                // Try to parse as many complete requests as possible
                 while let Some((request, consumed)) = Request::try_parse(&read_buffer) {
-                    local_offset += consumed; // ✅ advance offset only for what we parsed
+                    local_offset += consumed;
 
                     let mut runner = Runner::new(request.args);
                     runner.run(
@@ -112,8 +111,6 @@ pub fn spawn_replica_handler_thread(
                         &local_offset,
                         true,
                     );
-
-                    // Remove the bytes we consumed from the buffer
                     read_buffer.drain(..consumed);
                 }
             }
