@@ -84,12 +84,14 @@ impl Runner {
                 "unsubscribe" => {}
                 "psubscribe" => {}
                 "punsubscribe" => {}
-                "ping" => {}
+                "ping" => {
+                    self.handle_ping(stream, connection);
+                }
                 "quit" => {}
 
                 _ => {
                     write_error(stream, &format!("Can't execute '{command}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context"));
-                    self.cur_step = self.args.len();
+                    self.cur_step = self.args.len()
                 }
             }
         } else {
@@ -397,6 +399,10 @@ impl Runner {
         }
 
         3
+    }
+
+    fn handle_subscribed_ping(&self, stream: &mut TcpStream) {
+        write_array(stream, &[Some("PONG"), Some("")]);
     }
 
     fn handle_geoadd(
