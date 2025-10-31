@@ -102,3 +102,21 @@ pub fn geo_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
     EARTH_RADIUS_METERS * c
 }
+
+pub fn bounding_box(lat: f64, lon: f64, radius_m: f64) -> (f64, f64, f64, f64) {
+    let d_lat = (radius_m / EARTH_RADIUS_METERS).to_degrees();
+    let lat_rad = lat.to_radians();
+    let cos_lat = lat_rad.cos();
+    let adjusted_cos_lat = if cos_lat.abs() < 1e-9 { 1e-9 } else { cos_lat };
+    let d_lon = (radius_m / (EARTH_RADIUS_METERS * adjusted_cos_lat)).to_degrees();
+
+    (lat - d_lat, lat + d_lat, lon - d_lon, lon + d_lon) // min_lat, max_lat, min_lon, max_lon
+}
+
+pub fn haversine(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let d_lat = (lat2 - lat1).to_radians();
+    let d_lon = (lon2 - lon1).to_radians();
+    let a = (d_lat / 2.0).sin().powi(2)
+        + lat1.to_radians().cos() * lat2.to_radians().cos() * (d_lon / 2.0).sin().powi(2);
+    2.0 * EARTH_RADIUS_METERS * a.sqrt().asin()
+}

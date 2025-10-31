@@ -2,6 +2,8 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use crate::geo::{bounding_box, decode, encode, haversine};
+
 const MAX_LEVEL: usize = 32;
 
 type NodeType = Arc<RwLock<Node>>;
@@ -16,6 +18,7 @@ fn is_head() -> bool {
 pub struct Node {
     pub member: String,
     score: f64,
+    is_special: bool,
     forwards: Vec<Option<NodeType>>,
 }
 
@@ -25,6 +28,7 @@ impl Node {
             member: entry.1,
             score: entry.0,
             forwards: vec![None; MAX_LEVEL],
+            is_special: false,
         }));
     }
     fn new_dummy() -> NodeType {
@@ -32,6 +36,7 @@ impl Node {
             member: String::new(),
             score: 0.0,
             forwards: vec![None; MAX_LEVEL],
+            is_special: true,
         }));
     }
 }
@@ -184,6 +189,58 @@ impl SkipList {
         }
 
         is_removed
+    }
+
+    pub fn geo_range(&self, longitude: f64, latitude: f64, radius: f64) -> Vec<String> {
+        let (min_lat, max_lat, min_lon, max_lon) = bounding_box(latitude, longitude, radius);
+
+        let min_hash = encode(min_lat, min_lon) as f64;
+        let max_hash = encode(max_lat, max_lon) as f64;
+
+        if max_hash < min_hash {
+            return vec![];
+        }
+
+        let mut cur = Arc::clone(&self.head);
+
+        for lvl in (0..=self.level).rev() {
+            loop {
+                let next_opt = cur.read().unwrap().forwards[lvl].as_ref().map(Arc::clone);
+                match next_opt {
+                    Some(next) if next.read().unwrap().score < min_hash => cur = Arc::clone(&next),
+                    _ => break,
+                }
+            }
+        }
+
+        let mut cur_opt = cur.read().unwrap().forwards[0].as_ref().map(Arc::clone);
+        let mut candidates: Vec<Arc<RwLock<Node>>> = vec![];
+
+        while let Some(node) = cur_opt {
+            let score = node.read().unwrap().score;
+            if score > max_hash {
+                break;
+            }
+            if !node.read().unwrap().is_special {
+                candidates.push(Arc::clone(&node));
+            }
+            cur_opt = node.read().unwrap().forwards[0].as_ref().map(Arc::clone);
+        }
+
+        let mut nodes: Vec<String> = vec![];
+
+        for candidate in candidates {
+            let node = candidate.read().unwrap();
+            let encoded = node.score;
+            let (plat, plon) = decode(encoded as u64);
+
+            let distance = haversine(latitude, longitude, plat, plon);
+            if distance <= radius {
+                nodes.push(node.member.clone());
+            }
+        }
+
+        nodes
     }
 
     pub fn range(&self, start: i64, end: i64) -> Vec<(f64, String)> {

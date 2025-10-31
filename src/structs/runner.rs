@@ -235,6 +235,10 @@ impl Runner {
                 self.cur_step += self.handle_geodist(stream, args, db, connection);
             }
 
+            "geosearch" => {
+                self.cur_step += self.handle_geosearch(stream, args, db, connection);
+            }
+
             _ => {
                 write_error(stream, "unknown command");
             }
@@ -807,6 +811,52 @@ impl Runner {
             write_null_bulk_string(stream);
         }
         3
+    }
+
+    fn handle_geosearch(
+        &self,
+        stream: &mut TcpStream,
+        args: &[String],
+        db: &DbType,
+        _connection: &mut Connection,
+    ) -> usize {
+        // TODO: handle transaction
+        if args.len() < 7 {
+            write_error(stream, "wrong number of arguments for 'GEOSEARCH'");
+            return 0;
+        }
+        let zset_key = &args[0];
+        let lon: f64 = args[2].parse().unwrap_or(0.0);
+        let lat: f64 = args[3].parse().unwrap_or(0.0);
+        let radius_raw: f64 = args[5].parse().unwrap_or(0.0);
+        let unit = &args[6].to_lowercase();
+
+        let radius: f64 = match unit.as_str() {
+            "m" => radius_raw,
+            "km" => radius_raw * 1000.0,
+            "mi" => radius_raw * 1609.344,
+            "ft" => radius_raw * 0.3048,
+            "cm" => radius_raw * 0.01,
+            "mm" => radius_raw * 0.001,
+            "yd" => radius_raw * 0.9144,
+            _ => radius_raw,
+        };
+
+        let map = db.lock().unwrap();
+
+        if let Some(ValueType::ZSet(zset)) = map.get(zset_key) {
+            write_array(
+                stream,
+                &zset
+                    .geosearch(lon, lat, radius)
+                    .into_iter()
+                    .map(|s| Some(s.to_string()))
+                    .collect::<Vec<Option<String>>>(),
+            );
+        } else {
+            write_null_array(stream);
+        }
+        7
     }
 
     fn handle_zscore(

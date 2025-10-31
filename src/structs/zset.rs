@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::structs::skiplist::{self, SkipList};
+use crate::structs::skiplist::SkipList;
 
 pub struct ZSet {
     dict: HashMap<String, f64>,
@@ -41,6 +41,10 @@ impl ZSet {
 
     pub fn zcard(&self) -> usize {
         self.dict.len()
+    }
+
+    pub fn geosearch(&self, lon: f64, lat: f64, radius: f64) -> Vec<String> {
+        self.skiplist.geo_range(lon, lat, radius)
     }
 
     pub fn zrem(&mut self, member: &String) -> u32 {
